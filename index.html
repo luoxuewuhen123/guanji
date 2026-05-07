@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>观己 - 用聊天记录认识自己</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0f0f1a;
+            --bg2: #1a1a2e;
+            --bg3: #252540;
+            --purple: #6c5ce7;
+            --purple-light: #a29bfe;
+            --purple-glow: rgba(108, 92, 231, 0.3);
+            --green: #00b894;
+            --blue: #0984e3;
+            --text: #e8e8f0;
+            --text-dim: #8888aa;
+            --radius: 16px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        /* 背景装饰 */
+        .bg-orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.15;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .bg-orb-1 { width: 600px; height: 600px; background: var(--purple); top: -200px; right: -100px; }
+        .bg-orb-2 { width: 400px; height: 400px; background: #e84393; bottom: 10%; left: -100px; }
+        .bg-orb-3 { width: 300px; height: 300px; background: #00cec9; top: 50%; right: 10%; }
+
+        /* 导航 */
+        .nav {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 32px;
+            background: rgba(15, 15, 26, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(108, 92, 231, 0.1);
+        }
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+        }
+        .nav-brand .icon { font-size: 26px; }
+        .nav-links { display: flex; gap: 24px; }
+        .nav-links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: var(--purple-light); }
+
+        /* 主体 */
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Hero */
+        .hero {
+            padding-top: 140px;
+            padding-bottom: 80px;
+            text-align: center;
+        }
+        .hero-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            background: rgba(108, 92, 231, 0.15);
+            border: 1px solid rgba(108, 92, 231, 0.3);
+            border-radius: 20px;
+            font-size: 13px;
+            color: var(--purple-light);
+            margin-bottom: 24px;
+        }
+        .hero h1 {
+            font-size: 48px;
+            font-weight: 800;
+            line-height: 1.2;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #fff 0%, var(--purple-light) 50%, #e84393 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero p {
+            font-size: 18px;
+            color: var(--text-dim);
+            max-width: 560px;
+            margin: 0 auto 36px;
+        }
+        .hero-buttons {
+            display: flex;
+            gap: 14px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        /* 按钮 */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 28px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            border: none;
+            transition: all 0.25s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--purple), #8b5cf6);
+            color: #fff;
+            box-shadow: 0 4px 20px var(--purple-glow);
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px var(--purple-glow);
+        }
+        .btn-secondary {
+            background: var(--bg3);
+            color: var(--text);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .btn-secondary:hover {
+            background: rgba(108, 92, 231, 0.15);
+            border-color: var(--purple);
+        }
+
+        /* 特性区 */
+        .features {
+            padding: 60px 0;
+        }
+        .section-title {
+            text-align: center;
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+        .section-sub {
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 15px;
+            margin-bottom: 48px;
+        }
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+        .feature-card {
+            background: var(--bg2);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: var(--radius);
+            padding: 28px 22px;
+            transition: all 0.3s;
+        }
+        .feature-card:hover {
+            border-color: var(--purple);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 30px rgba(108, 92, 231, 0.1);
+        }
+        .feature-icon {
+            font-size: 36px;
+            margin-bottom: 16px;
+        }
+        .feature-card h3 {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        .feature-card p {
+            font-size: 13px;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+
+        /* 命运塔罗区 */
+        .tarot-section {
+            padding: 60px 0;
+        }
+        .tarot-card {
+            background: linear-gradient(135deg, rgba(108, 92, 231, 0.12), rgba(232, 67, 147, 0.08), rgba(0, 206, 201, 0.06));
+            border: 1px solid rgba(108, 92, 231, 0.25);
+            border-radius: var(--radius);
+            padding: 40px 32px;
+        }
+        .tarot-inner {
+            display: flex;
+            gap: 40px;
+            align-items: center;
+        }
+        .tarot-left { flex: 1.2; }
+        .tarot-right { flex: 0.8; }
+        .tarot-icon { font-size: 52px; margin-bottom: 16px; }
+        .tarot-card h3 { font-size: 20px; margin-bottom: 14px; }
+        .tarot-card p { font-size: 14px; color: var(--text-dim); line-height: 1.8; }
+        .tarot-features {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 16px;
+        }
+        .tarot-tag {
+            padding: 4px 12px;
+            background: rgba(108, 92, 231, 0.15);
+            border: 1px solid rgba(108, 92, 231, 0.25);
+            border-radius: 16px;
+            font-size: 12px;
+            color: var(--purple-light);
+        }
+        .tarot-example {
+            background: var(--bg);
+            border-radius: 12px;
+            padding: 24px 20px;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+        .tarot-example-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 14px;
+            color: var(--purple-light);
+        }
+        .tarot-example-item {
+            font-size: 13px;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+        .tarot-example-item strong { color: var(--green); }
+        @media (max-width: 768px) {
+            .tarot-inner { flex-direction: column; gap: 24px; }
+            .tarot-left, .tarot-right { flex: 1; width: 100%; }
+            .tarot-card { padding: 28px 20px; }
+        }
+
+        /* 工作流程 */
+        .steps-section {
+            padding: 60px 0;
+        }
+        .steps-grid {
+            display: flex;
+            gap: 16px;
+            align-items: stretch;
+        }
+        .step-card {
+            flex: 1;
+            background: var(--bg2);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: var(--radius);
+            padding: 28px 22px;
+            text-align: center;
+            position: relative;
+        }
+        .step-num {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--purple), #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            margin: 0 auto 16px;
+        }
+        .step-card h3 {
+            font-size: 15px;
+            margin-bottom: 8px;
+        }
+        .step-card p {
+            font-size: 13px;
+            color: var(--text-dim);
+        }
+        .step-arrow {
+            display: flex;
+            align-items: center;
+            color: var(--purple);
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+
+        /* 下载区 */
+        .download-section {
+            padding: 60px 0;
+        }
+        .download-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+        .download-card {
+            background: var(--bg2);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: var(--radius);
+            padding: 32px 24px;
+            text-align: center;
+            transition: all 0.3s;
+            text-decoration: none;
+            color: var(--text);
+            display: block;
+        }
+        .download-card:hover {
+            border-color: var(--purple);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 30px rgba(108, 92, 231, 0.1);
+        }
+        .download-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .download-card h3 {
+            font-size: 17px;
+            margin-bottom: 8px;
+        }
+        .download-card p {
+            font-size: 13px;
+            color: var(--text-dim);
+            margin-bottom: 18px;
+        }
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 22px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .download-btn-wechat {
+            background: rgba(7, 193, 96, 0.15);
+            color: #07c160;
+            border: 1px solid rgba(7, 193, 96, 0.3);
+        }
+        .download-btn-wechat:hover { background: rgba(7, 193, 96, 0.25); }
+        .download-btn-qq {
+            background: rgba(18, 183, 243, 0.15);
+            color: #12b7f3;
+            border: 1px solid rgba(18, 183, 243, 0.3);
+        }
+        .download-btn-qq:hover { background: rgba(18, 183, 243, 0.25); }
+
+        /* 隐私区 */
+        .privacy-section {
+            padding: 60px 0;
+        }
+        .privacy-card {
+            background: linear-gradient(135deg, rgba(108, 92, 231, 0.1), rgba(232, 67, 147, 0.05));
+            border: 1px solid rgba(108, 92, 231, 0.2);
+            border-radius: var(--radius);
+            padding: 36px 32px;
+            text-align: center;
+        }
+        .privacy-icon { font-size: 42px; margin-bottom: 16px; }
+        .privacy-card h3 { font-size: 20px; margin-bottom: 12px; }
+        .privacy-card p { font-size: 14px; color: var(--text-dim); max-width: 520px; margin: 0 auto; }
+
+        /* 技术支持 */
+        .support-section {
+            padding: 60px 0 80px;
+        }
+        .support-card {
+            background: var(--bg2);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: var(--radius);
+            padding: 32px;
+            text-align: center;
+        }
+        .support-card h3 { font-size: 20px; margin-bottom: 12px; }
+        .support-card p { font-size: 14px; color: var(--text-dim); margin-bottom: 20px; }
+        .support-wechat {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 24px;
+            background: rgba(7, 193, 96, 0.12);
+            border: 1px solid rgba(7, 193, 96, 0.25);
+            border-radius: 10px;
+            font-size: 15px;
+            color: #07c160;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 24px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .nav { padding: 12px 16px; }
+            .nav-links { display: none; }
+            .hero { padding-top: 100px; padding-bottom: 50px; }
+            .hero h1 { font-size: 32px; }
+            .hero p { font-size: 15px; }
+            .hero-buttons { flex-direction: column; align-items: center; }
+            .btn { width: 100%; max-width: 280px; justify-content: center; }
+            .feature-grid { grid-template-columns: 1fr; }
+            .steps-grid { flex-direction: column; }
+            .step-arrow { transform: rotate(90deg); justify-content: center; }
+            .download-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- 背景光斑 -->
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
+<div class="bg-orb bg-orb-3"></div>
+
+<!-- 导航 -->
+<nav class="nav">
+    <a href="index.html" class="nav-brand">
+        <span class="icon">🔮</span> 观己
+    </a>
+    <div class="nav-links">
+        <a href="#features">功能特性</a>
+        <a href="#tarot">命运塔罗</a>
+        <a href="#steps">使用流程</a>
+        <a href="#download">下载工具</a>
+        <a href="#privacy">隐私保护</a>
+        <a href="#support">技术支持</a>
+    </div>
+</nav>
+
+<div class="container">
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="hero-badge">🔒 数据全部本地处理，绝不上传</div>
+        <h1>用聊天记录<br>重新认识自己</h1>
+        <p>导入微信或QQ聊天记录，AI帮你梳理人生经历、人际关系、性格演变，生成专属AI报告，导入AI让AI成为你的知己——所有数据只在你自己的浏览器里处理</p>
+        <div class="hero-buttons">
+            <a href="app.html" class="btn btn-primary">🔮 开始分析</a>
+            <a href="tarot/index.html" class="btn btn-secondary">🃏 命运塔罗</a>
+            <a href="#download" class="btn btn-secondary">📥 下载导出工具</a>
+        </div>
+    </section>
+
+    <!-- 特性 -->
+    <section class="features" id="features">
+        <h2 class="section-title">核心特性</h2>
+        <p class="section-sub">从海量聊天记录中，提炼出关于你的真实画像</p>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🕐</div>
+                <h3>人生时间线</h3>
+                <p>按时间梳理你经历过什么、在哪里、做什么——像翻阅一本关于自己的书</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🤝</div>
+                <h3>人际关系图谱</h3>
+                <p>你身边有哪些人、什么时候认识的、关系如何——看清你最在乎谁</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <h3>性格与价值观</h3>
+                <p>从经历、关系、兴趣中推导你的性格特质——不是标签，是演变</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🎯</div>
+                <h3>兴趣与驱动力</h3>
+                <p>不同阶段你在追求什么、什么在驱动你——看见自己的成长轨迹</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🤖</div>
+                <h3>AI专属报告</h3>
+                <p>一份"让AI像朋友一样了解你"的信件——带走它，让任何AI更懂你</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>纯前端运行</h3>
+                <p>文件读取→数据清洗→AI分析→报告生成，全在浏览器本地完成</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 命运塔罗 -->
+    <section class="tarot-section" id="tarot">
+        <h2 class="section-title">🃏 命运塔罗</h2>
+        <p class="section-sub">不是迷信，是另一种认识自己的方式</p>
+        <div class="tarot-card">
+            <div class="tarot-inner">
+                <div class="tarot-left">
+                    <div class="tarot-icon">🃏</div>
+                    <h3>三牌阵 + 命运画像 + 哲学解读</h3>
+                    <p>抽三张塔罗牌，系统自动生成你的命运画像（能量/方向/关系/时机/觉知五维度），前端精确计算时间、概率、判断等量化结果，AI结合哲学思想深度解读——不只是告诉你"会还是不会"，更要让你明白"为什么"。</p>
+                    <div class="tarot-features">
+                        <span class="tarot-tag">⏰ 时间预测</span>
+                        <span class="tarot-tag">📊 概率计算</span>
+                        <span class="tarot-tag">⚖️ 是非判断</span>
+                        <span class="tarot-tag">🧭 方向指引</span>
+                        <span class="tarot-tag">🔮 命运画像</span>
+                        <span class="tarot-tag">📖 哲学解读</span>
+                    </div>
+                    <a href="tarot/index.html" class="btn btn-primary" style="margin-top:20px">🃏 开始占卜</a>
+                </div>
+                <div class="tarot-right">
+                    <div class="tarot-example">
+                        <div class="tarot-example-title">你可以问：</div>
+                        <div class="tarot-example-item">❓ 我的股票会涨吗 → <strong>会 / 不会 + 65%</strong></div>
+                        <div class="tarot-example-item">❓ 什么时候能买房 → <strong>2027-2028年</strong></div>
+                        <div class="tarot-example-item">❓ 该不该换工作 → <strong>倾向是 + 低风险</strong></div>
+                        <div class="tarot-example-item">❓ 我的人生方向在哪 → <strong>方向正确，继续前进</strong></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 使用流程 -->
+    <section class="steps-section" id="steps">
+        <h2 class="section-title">三步完成</h2>
+        <p class="section-sub">从导出到分析，简单三步</p>
+        <div class="steps-grid">
+            <div class="step-card">
+                <div class="step-num">1</div>
+                <h3>导出聊天记录</h3>
+                <p>用下方的导出工具，从微信或QQ中导出TXT格式的聊天记录</p>
+            </div>
+            <div class="step-arrow">→</div>
+            <div class="step-card">
+                <div class="step-num">2</div>
+                <h3>上传并分析</h3>
+                <p>选择TXT文件，配置AI模型，点击开始分析——数据全在本地处理</p>
+            </div>
+            <div class="step-arrow">→</div>
+            <div class="step-card">
+                <div class="step-num">3</div>
+                <h3>下载三份报告</h3>
+                <p>分析过程报告 / 个人阅读报告 / AI专属报告，全面认识自己</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 下载工具 -->
+    <section class="download-section" id="download">
+        <h2 class="section-title">下载导出工具</h2>
+        <p class="section-sub">先把聊天记录导出为TXT文件，才能在观己中分析</p>
+        <div class="download-grid">
+            <a href="微信聊天记录导出工具.exe" download class="download-card">
+                <div class="download-icon">💬</div>
+                <h3>微信聊天记录导出工具</h3>
+                <p>支持微信4.x版本，自动提取密钥，解密数据库，导出聊天记录为TXT/HTML</p>
+                <div class="download-btn download-btn-wechat">📥 下载 Windows 版</div>
+            </a>
+            <a href="QQ聊天记录导出工具.exe" download class="download-card">
+                <div class="download-icon">🐧</div>
+                <h3>QQ聊天记录导出工具</h3>
+                <p>支持QQ NT版本，调试器法提取密钥，Protobuf解析，导出聊天记录为TXT/HTML</p>
+                <div class="download-btn download-btn-qq">📥 下载 Windows 版</div>
+            </a>
+        </div>
+    </section>
+
+    <!-- 隐私 -->
+    <section class="privacy-section" id="privacy">
+        <div class="privacy-card">
+            <div class="privacy-icon">🔒</div>
+            <h3>隐私是我们的底线</h3>
+            <p>你的聊天记录包含最私密的信息。观己采用纯前端架构，所有数据读取、清洗、分析都在你自己的浏览器中完成，没有任何数据上传到服务器。AI分析通过你自己的API Key直接调用，我们不经手你的任何内容。</p>
+        </div>
+    </section>
+
+    <!-- 技术支持 -->
+    <section class="support-section" id="support">
+        <div class="support-card">
+            <h3>🛠️ 技术支持</h3>
+            <p>遇到问题？添加微信获取技术支持，也欢迎交流反馈</p>
+            <div class="support-wechat">💬 微信：zhengtu920</div>
+        </div>
+    </section>
+
+</div>
+
+<!-- Footer -->
+<div class="footer">
+    观己 — 观察自己，认识自己 · 数据全部本地，隐私绝不妥协
+</div>
+
+</body>
+</html>
