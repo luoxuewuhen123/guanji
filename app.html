@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>观己 - 观察自己</title>
+    <link rel="stylesheet" href="app.css">
+    <script defer src="app-core.js"></script>
+    <script defer src="app-ui.js"></script>
+</head>
+<body>
+
+<!-- 导航栏 -->
+<nav class="nav">
+    <div class="nav-brand">
+        <span class="icon">🔮</span>
+        <span>观己</span>
+        <span class="nav-slogan">观察自己，了解自己</span>
+    </div>
+    <div class="nav-privacy">
+        🔒 数据仅存本地
+    </div>
+</nav>
+
+<!-- 主内容 -->
+<div class="main">
+
+    <!-- 步骤条 -->
+    <div class="steps">
+        <div class="step active" id="step1">
+            <div class="step-num">1</div>
+            <div class="step-label">选择数据</div>
+        </div>
+        <div class="step" id="step2">
+            <div class="step-num">2</div>
+            <div class="step-label">数据清洗</div>
+        </div>
+        <div class="step" id="step3">
+            <div class="step-num">3</div>
+            <div class="step-label">分析设置</div>
+        </div>
+        <div class="step" id="step4">
+            <div class="step-num">4</div>
+            <div class="step-label">查看报告</div>
+        </div>
+    </div>
+
+    <!-- 步骤1：选择数据文件 -->
+    <div id="section-upload">
+        <div class="card">
+            <div class="card-title">📁 选择你的数据文件</div>
+            <p style="color:var(--text-dim);font-size:13px;margin-bottom:20px;">
+                选择微信或QQ聊天记录，观己会自动识别格式并清洗数据
+            </p>
+            
+            <!-- 微信文件 -->
+            <div style="margin-bottom:20px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                    <span style="font-size:20px;">💬</span>
+                    <span style="font-weight:600;">微信聊天记录</span>
+                    <span style="font-size:12px;color:var(--text-dim);">TXT 格式</span>
+                </div>
+                <div class="file-upload-zone" id="zone-wechat">
+                    <span class="upload-icon">📂</span>
+                    <span class="upload-text">点击选择文件，或拖拽到此处</span>
+                    <input type="file" id="input-wechat" multiple accept=".txt" style="display:none">
+                </div>
+                <div class="file-list-inline" id="list-wechat"></div>
+            </div>
+            
+            <!-- QQ文件 -->
+            <div style="margin-bottom:20px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                    <span style="font-size:20px;">🐧</span>
+                    <span style="font-weight:600;">QQ聊天记录</span>
+                    <span style="font-size:12px;color:var(--text-dim);">TXT 格式（可选）</span>
+                </div>
+                <div class="file-upload-zone" id="zone-qq">
+                    <span class="upload-icon">📂</span>
+                    <span class="upload-text">点击选择文件，或拖拽到此处</span>
+                    <input type="file" id="input-qq" multiple accept=".txt" style="display:none">
+                </div>
+                <div class="file-list-inline" id="list-qq"></div>
+            </div>
+
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" id="btn-clean" onclick="cleanData()">🧹 数据清洗</button>
+        </div>
+    </div>
+
+    <!-- 步骤2：数据清洗结果 -->
+    <div id="section-clean" style="display:none">
+        <div class="card">
+            <div class="card-title-row">
+                <span class="card-title">🧹 数据清洗结果</span>
+                <button class="btn btn-primary btn-sm" onclick="openPreviewWindow()">📊 查看数据可视化</button>
+            </div>
+            <div id="clean-result"></div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-secondary" onclick="goToUpload()">← 重新选择</button>
+            <button class="btn btn-primary" onclick="goToSettings()">下一步：AI分析 →</button>
+        </div>
+    </div>
+
+    <!-- 步骤3：分析设置 -->
+    <div id="section-settings" style="display:none">
+        <div class="card">
+            <div class="card-title">⚙️ 分析设置</div>
+            <div class="settings-grid">
+                <!-- API配置（必填） -->
+                <div style="grid-column:1/-1;background:rgba(108,92,231,0.08);border:1px solid rgba(108,92,231,0.2);border-radius:12px;padding:16px;margin-bottom:16px;">
+                    <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">⚠️ 请配置你的AI模型API信息，数据仅在分析时使用，不会上传到任何服务器</div>
+                    <div class="settings-grid" style="gap:12px;">
+                        <div class="form-group" style="margin:0">
+                            <label class="form-label">API地址</label>
+                            <input type="text" class="form-input" id="api-url" placeholder="https://api.deepseek.com/chat/completions">
+                        </div>
+                        <div class="form-group" style="margin:0">
+                            <label class="form-label">API Key <span style="color:var(--danger)">*</span></label>
+                            <input type="password" class="form-input" id="api-key" placeholder="sk-xxxxxxxx（必填）">
+                        </div>
+                        <div class="form-group" style="margin:0">
+                            <label class="form-label">模型名称</label>
+                            <input type="text" class="form-input" id="api-model" placeholder="deepseek-v4-flash">
+                        </div>
+                    </div>
+                    <div style="margin-top:10px;font-size:12px;color:var(--text-dim);">
+                        常用配置参考：
+                        <span style="color:var(--success);cursor:pointer;margin:0 6px;" onclick="fillPreset('deepseek')">DeepSeek V4（默认）</span>｜
+                        <span style="color:var(--success);cursor:pointer;margin:0 6px;" onclick="fillPreset('hunyuan')">HY3-Preview（256K）</span>｜
+                        <span style="color:var(--success);cursor:pointer;margin:0 6px;" onclick="fillPreset('glm5')">GLM-5.1（256K+）</span>｜
+                        <span style="color:var(--success);cursor:pointer;margin:0 6px;" onclick="fillPreset('gemini')">Gemini 2.5 Pro（1M）</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 维度说明 + 开始分析 -->
+        <div class="card">
+            <div class="card-title">🔍 将分析以下3个维度 + 推断性格价值观</div>
+            <div style="margin-bottom:10px;font-size:12px;color:var(--text-dim);">先从数据中提取事实（人生经历→兴趣爱好→人际关系），再从前三个维度推导出性格与价值观</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;">
+                <div style="padding:12px;background:rgba(108,92,231,0.1);border-radius:10px;text-align:center;">
+                    <div style="font-size:24px;">🛤️</div>
+                    <div style="font-weight:600;margin-top:4px;">人生经历</div>
+                    <div style="font-size:11px;color:var(--text-dim);">地点·事件·动机</div>
+                </div>
+                <div style="padding:12px;background:rgba(255,107,107,0.1);border-radius:10px;text-align:center;">
+                    <div style="font-size:24px;">🎯</div>
+                    <div style="font-weight:600;margin-top:4px;">兴趣爱好</div>
+                    <div style="font-size:11px;color:var(--text-dim);">时间线·演变</div>
+                </div>
+                <div style="padding:12px;background:rgba(0,206,201,0.1);border-radius:10px;text-align:center;">
+                    <div style="font-size:24px;">🤝</div>
+                    <div style="font-weight:600;margin-top:4px;">人际关系</div>
+                    <div style="font-size:11px;color:var(--text-dim);">按人·时间线变化</div>
+                </div>
+                <div style="padding:12px;background:rgba(162,155,254,0.1);border-radius:10px;text-align:center;border:1px dashed rgba(162,155,254,0.4);">
+                    <div style="font-size:24px;">🧠</div>
+                    <div style="font-weight:600;margin-top:4px;">性格与价值观</div>
+                    <div style="font-size:11px;color:var(--text-dim);">由以上3维推断</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-secondary" onclick="goToClean()">← 返回</button>
+            <button class="btn btn-primary" id="btn-analyze" onclick="startAnalysis()">🔮 开始分析</button>
+        </div>
+    </div>
+
+    <!-- 分析进度 -->
+    <div id="section-progress" style="display:none">
+        <div class="card">
+            <div class="card-title">🔮 正在分析...</div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+            </div>
+            <div class="progress-text" id="progress-text">准备中...</div>
+            <div id="log-panel" class="log-panel"></div>
+        </div>
+    </div>
+
+    <!-- 步骤4：报告下载 -->
+    <div id="section-report" style="display:none">
+        <div class="card">
+            <div class="card-title">✅ 分析完成！</div>
+            <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">
+                已生成3份报告，点击卡片可在线预览全部内容
+            </p>
+            <div class="download-grid">
+                <div class="download-card" onclick="previewFile('analysis')">
+                    <div class="download-icon">🔬</div>
+                    <div class="download-title">分析过程报告</div>
+                    <div class="download-desc">包含完整分析过程和推理依据，供想要深入了解的人看</div>
+                </div>
+                <div class="download-card" onclick="previewFile('personal')">
+                    <div class="download-icon">🪞</div>
+                    <div class="download-title">个人阅读报告</div>
+                    <div class="download-desc">去掉了分析过程，只保留结论，给自己看的报告</div>
+                </div>
+                <div class="download-card" onclick="previewFile('ai')">
+                    <div class="download-icon">🤖</div>
+                    <div class="download-title">AI专属报告</div>
+                    <div class="download-desc">让AI像朋友一样了解你，以朋友或伴侣的方式陪伴你</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+            <div class="card-title" style="font-size:14px;margin-bottom:12px;">📥 下载报告文件</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <button class="btn btn-secondary" onclick="downloadFileBoth('analysis')" style="flex:1;min-width:150px;">🔬 分析过程报告</button>
+                <button class="btn btn-secondary" onclick="downloadFileBoth('personal')" style="flex:1;min-width:150px;">🪞 个人阅读报告</button>
+                <button class="btn btn-secondary" onclick="downloadFileBoth('ai')" style="flex:1;min-width:150px;">🤖 AI专属报告</button>
+                <button class="btn btn-secondary" onclick="downloadSystemPrompt()" style="flex:1;min-width:150px;border-color:rgba(0,206,201,0.4);color:#00cec9;">⚡ System Prompt版</button>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:8px;">
+                💡 每个报告将同时下载 <strong style="color:#a855f7;">HTML</strong> 和 <strong style="color:#00cec9;">MD</strong> 两种格式 · <strong style="color:#00cec9;">System Prompt版</strong> 是为ChatGPT/Claude优化的精简版
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-secondary" onclick="goToUpload()">返回主页</button>
+        </div>
+    </div>
+
+</div>
+
+<!-- 预览弹窗 -->
+<div id="preview-modal" class="preview-modal" style="display:none" onclick="if(event.target===this)closePreview()">
+    <div class="preview-content" onclick="event.stopPropagation()">
+        <div class="preview-header">
+            <span id="preview-title">报告预览</span>
+            <button class="preview-close" onclick="closePreview()">×</button>
+        </div>
+        <div id="preview-body" class="preview-body"></div>
+        <div class="preview-footer">
+            <span style="color:#888;font-size:12px;flex:1;">💡 Ctrl+S 保存为HTML · 离线可查看</span>
+            <button class="btn btn-secondary" onclick="closePreview()">关闭</button>
+            <button class="btn btn-primary" id="preview-download-btn" onclick="downloadCurrentPreviewBoth()">📥 下载HTML+MD</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+</body>
+</html>

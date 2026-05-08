@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>命运塔罗 - 纯前端版</title>
+    <!-- 外部库：异步加载不阻塞渲染 -->
+    <script async src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="tarot.css">
+    <script defer src="tarot.js"></script>
+</head>
+<body>
+    <div id="atmosphere-overlay"></div>
+    <div id="atmosphere-tip"></div>
+    <div id="card-atmosphere"></div>
+    <div id="meditation-overlay">
+        <div class="meditation-text" id="meditationText">请闭上眼睛，默念你的问题...</div>
+        <div class="breathing-circle"></div>
+        <div class="meditation-countdown" id="meditationCountdown"></div>
+    </div>
+    <div class="container">
+        <h1>🎴 命运塔罗</h1>
+        <p class="subtitle">探索命运的轨迹，解读人生的密码</p>
+
+        <div class="step">
+            <div class="step-item active" id="step1">1. 命运画像</div>
+            <div class="step-item" id="step2">2. 提出问题</div>
+            <div class="step-item" id="step3">3. 抽取塔罗</div>
+            <div class="step-item" id="step4">4. AI解读</div>
+        </div>
+
+        <!-- 第一步：命运画像问卷 -->
+        <div id="questionnaire" class="card">
+            <h2 style="margin-bottom: 20px;">🔮 描绘你的命运画像</h2>
+
+            <div class="question">
+                <div class="question-title">此刻驱动你行动的主要力量是？</div>
+                <div class="options" data-question="energy">
+                    <div class="option" data-value="fear">焦虑、害怕失去什么</div>
+                    <div class="option" data-value="hope">期待、想要得到什么</div>
+                    <div class="option" data-value="neutral">平静、没有强烈感觉</div>
+                </div>
+            </div>
+
+            <div class="question">
+                <div class="question-title">你现在的注意力更多在？</div>
+                <div class="options" data-question="direction">
+                    <div class="option" data-value="inward">自己内心，思考人生意义</div>
+                    <div class="option" data-value="outward">外部世界，追求目标</div>
+                    <div class="option" data-value="balance">两者都有，来回摆动</div>
+                </div>
+            </div>
+
+            <div class="question">
+                <div class="question-title">你觉得你的人生？</div>
+                <div class="options" data-question="relation">
+                    <div class="option" data-value="entangled">被他人和环境影响很大</div>
+                    <div class="option" data-value="independent">主要由自己掌控</div>
+                    <div class="option" data-value="uncertain">不确定，有时候这样有时候那样</div>
+                </div>
+            </div>
+
+            <div class="question">
+                <div class="question-title">你感觉自己正处于人生的哪个阶段？</div>
+                <div class="options" data-question="timing">
+                    <div class="option" data-value="rising">上升期 - 感觉在成长，机会在出现，能量充沛</div>
+                    <div class="option" data-value="stable">稳定期 - 感觉平稳，在维持现状，慢慢积累</div>
+                    <div class="option" data-value="declining">下降期 - 感觉在消耗，压力大，需要调整</div>
+                    <div class="option" data-value="turning">转折期 - 感觉在变化，面临选择，关键节点</div>
+                </div>
+            </div>
+
+            <div class="question">
+                <div class="question-title">你对自己的人生？</div>
+                <div class="options" data-question="awareness">
+                    <div class="option" data-value="clear">看得很清楚，知道自己在做什么</div>
+                    <div class="option" data-value="partial">有些迷茫，但隐约感觉到什么</div>
+                    <div class="option" data-value="unclear">完全看不清，不知道自己在干嘛</div>
+                </div>
+            </div>
+
+            <div class="question" style="opacity:0.85;">
+                <div class="question-title">💭 当前最困扰的事<span style="font-size:0.75em;color:#bdc3c7;">（选填，50字以内，帮助AI更精准解读）</span></div>
+                <textarea id="openConcern" maxlength="50" placeholder="例如：害怕失去工作 / 担心感情出问题 / 不知道该不该考研" style="width:100%;min-height:60px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#ecf0f1;padding:10px;font-size:14px;resize:none;"></textarea>
+            </div>
+
+            <div class="buttons">
+                <button class="btn" id="nextToQuestion" disabled>下一步：提出问题 →</button>
+            </div>
+        </div>
+
+        <!-- 第二步：提出问题 -->
+        <div id="questionInput" class="card hidden">
+            <h2>🔮 提出你的问题</h2>
+
+            <div class="reading-result" style="margin-bottom: 25px;">
+                <h3 style="color: #f39c12; margin-bottom: 15px;">你的命运画像</h3>
+                <p id="fateProfileText" style="line-height: 1.8;"></p>
+            </div>
+
+            <div class="input-group">
+                <label>你想问什么？（可以是事业、爱情、财富、人生方向等）</label>
+                <textarea id="userQuestion" placeholder="例如：我的事业什么时候会成功？"></textarea>
+            </div>
+
+            <div class="buttons">
+                <button class="btn btn-secondary" id="backToQuestionnaire">← 重新评估</button>
+                <button class="btn" id="startReading">开始抽牌占卜 🎴</button>
+            </div>
+            <div style="text-align:center;margin-top:10px;display:flex;gap:8px;justify-content:center;">
+                <button onclick="exportProfile()" style="background:none;border:1px solid rgba(255,255,255,0.15);color:#7f8c8d;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:0.75em;">💾 导出存档</button>
+                <button onclick="importProfile()" style="background:none;border:1px solid rgba(255,255,255,0.15);color:#7f8c8d;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:0.75em;">📂 导入存档</button>
+            </div>
+        </div>
+
+        <!-- 第三步：抽牌 -->
+        <div id="cardDrawing" class="card hidden">
+            <h2>🎴 抽取你的命运之牌</h2>
+            <p style="text-align: center; margin-bottom: 30px; color: #bdc3c7;">点击卡牌揭示你的过去、现在和未来</p>
+
+            <div class="cards-display">
+                <div class="tarot-card" data-position="past">
+                    <div class="card-inner">
+                        <div class="card-back">
+                            <span class="card-position">过去</span>
+                            <div style="font-size:3em;color:rgba(255,255,255,0.15);">?</div>
+                        </div>
+                        <div class="card-front">
+                            <span class="card-position">过去</span>
+                            <div class="card-name"></div>
+                            <div class="card-meaning"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tarot-card" data-position="present">
+                    <div class="card-inner">
+                        <div class="card-back">
+                            <span class="card-position">现在</span>
+                            <div style="font-size:3em;color:rgba(255,255,255,0.15);">?</div>
+                        </div>
+                        <div class="card-front">
+                            <span class="card-position">现在</span>
+                            <div class="card-name"></div>
+                            <div class="card-meaning"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tarot-card" data-position="future">
+                    <div class="card-inner">
+                        <div class="card-back">
+                            <span class="card-position">未来</span>
+                            <div style="font-size:3em;color:rgba(255,255,255,0.15);">?</div>
+                        </div>
+                        <div class="card-front">
+                            <span class="card-position">未来</span>
+                            <div class="card-name"></div>
+                            <div class="card-meaning"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="buttons">
+                <button class="btn" id="revealAllCards">全部揭示</button>
+                <button class="btn hidden" id="getReading" disabled>获取AI解读 🔮</button>
+            </div>
+        </div>
+
+        <!-- 第四步：AI解读 -->
+        <div id="aiReading" class="card hidden">
+            <div id="readingLoading" class="loading">
+                <div class="loading-spinner"></div>
+                <p>AI正在为你解读塔罗牌...</p>
+            </div>
+
+            <div id="readingContent" class="hidden">
+                <h2>✨ 你的塔罗解读</h2>
+                <div id="readingResult"></div>
+
+                <div class="buttons" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
+                    <button class="btn" id="copyReading" onclick="copyReadingText()" style="flex:1;min-width:120px;background:rgba(108,92,231,0.2);border:1px solid rgba(108,92,231,0.4);">📋 复制解读</button>
+                    <button class="btn" id="savePoster" onclick="saveAsImage()" style="flex:1;min-width:120px;background:rgba(243,156,18,0.2);border:1px solid rgba(243,156,18,0.4);">🖼️ 保存海报</button>
+                    <button class="btn" onclick="showHistory()" style="flex:1;min-width:120px;background:rgba(155,89,182,0.2);border:1px solid rgba(155,89,182,0.4);">📜 历史记录</button>
+                    <button class="btn" id="newReading" style="flex:1;min-width:120px;">重新占卜</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
