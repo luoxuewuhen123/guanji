@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>观己 - 用聊天记录认识自己</title>
+    <link rel="manifest" href="/manifest.json">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -434,6 +435,11 @@
             .download-grid { grid-template-columns: 1fr; }
         }
     </style>
+    <script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js');
+}
+    </script>
 </head>
 <body>
 
@@ -572,13 +578,13 @@
         <h2 class="section-title">下载导出工具</h2>
         <p class="section-sub">先把聊天记录导出为TXT文件，才能在观己中分析</p>
         <div class="download-grid">
-            <a href="https://pan.quark.cn/s/5e44c7a1e6ff" download class="download-card">
+            <a href="https://wwbdf.lanzoum.com/i0uBK3pb11vi" download class="download-card">
                 <div class="download-icon">💬</div>
                 <h3>微信聊天记录导出工具</h3>
                 <p>支持微信4.x版本，自动提取密钥，解密数据库，导出聊天记录为TXT/HTML</p>
                 <div class="download-btn download-btn-wechat">📥 下载 Windows 版</div>
             </a>
-            <a href="https://pan.quark.cn/s/e8e95e6c3a27" download class="download-card">
+            <a href="https://wwbdf.lanzoum.com/izsID3pb0zuf" download class="download-card">
                 <div class="download-icon">🐧</div>
                 <h3>QQ聊天记录导出工具</h3>
                 <p>支持QQ NT版本，调试器法提取密钥，Protobuf解析，导出聊天记录为TXT/HTML</p>

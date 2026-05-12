@@ -1,0 +1,11 @@
+{
+  "name": "观己 - 用聊天记录认识自己",
+  "short_name": "观己",
+  "description": "用聊天记录认识自己",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f0f1a",
+  "theme_color": "#6c5ce7",
+  "icons": []
+}
