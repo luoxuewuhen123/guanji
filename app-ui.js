@@ -980,28 +980,6 @@ if (document.readyState === 'loading') {
     initDragDrop();
 }
 
-function downloadSystemPrompt() {
-    const content = window._guanjiSystemPrompt;
-    if (!content) {
-        showToast('System Prompt版尚未生成，请先完成分析', 'error');
-        return;
-    }
-    const now = new Date();
-    const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `观己_SystemPrompt_${dateStr}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('System Prompt版已下载', 'success');
-}
-
-
-
 let currentPreviewType = null;
 
 function previewFile(type) {
