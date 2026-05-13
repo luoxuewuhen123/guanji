@@ -1,5 +1,5 @@
-// 观己 Service Worker - v1
-var CACHE_NAME = 'guanji-v1';
+// 观己 Service Worker - v2
+var CACHE_NAME = 'guanji-v2';
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
@@ -8,17 +8,20 @@ self.addEventListener('install', function(e) {
         '/index.html',
         '/app.html',
         '/app.css',
-        '/app-core.js',
-        '/app-ui.js'
+        '/app-core.min.js',
+        '/app-ui.min.js'
       ]);
     })
   );
 });
 
 self.addEventListener('fetch', function(e) {
-  e.respondWith(
-    caches.match(e.request).then(function(r) {
-      return r || fetch(e.request);
-    })
-  );
+  // 只拦截同源请求，放过外部CDN
+  if (e.request.url.startsWith(self.location.origin)) {
+    e.respondWith(
+      caches.match(e.request).then(function(r) {
+        return r || fetch(e.request);
+      })
+    );
+  }
 });
