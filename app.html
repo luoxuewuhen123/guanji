@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>观己 - 观察自己</title>
-    <link rel="stylesheet" href="app.min.css">
-	<script defer src="app-core.min.js"></script>
-	<script defer src="app-ui.min.js"></script>
+    <link rel="stylesheet" href="app.css">
+	<script defer src="app-core.js"></script>
+	<script defer src="app-ui.js"></script>
 </head>
 <body>
 
@@ -134,6 +134,7 @@
                         <span style="color:var(--success);cursor:pointer;margin:0 6px;" onclick="fillPreset('hunyuan')">HY3-Preview（256K）</span>｜
                         <span style="color:var(--success);cursor:pointer;margin:0 6px;" onclick="fillPreset('glm5')">GLM-5.1（256K+）</span>｜
                         <span style="color:var(--success);cursor:pointer;margin:0 6px;" onclick="fillPreset('gemini')">Gemini 2.5 Pro（1M）</span>
+                        <span style="display:block;margin-top:4px;color:var(--warning);">💡 DeepSeek输出上限8192字，报告较长时建议用GLM-5.1或Gemini得到完整结果</span>
                     </div>
                 </div>
             </div>
@@ -142,28 +143,23 @@
 
         <!-- 维度说明 + 开始分析 -->
         <div class="card">
-            <div class="card-title">🔍 将分析以下3个维度 + 推断性格价值观</div>
-            <div style="margin-bottom:10px;font-size:12px;color:var(--text-dim);">先从数据中提取事实（人生经历→兴趣爱好→人际关系），再从前三个维度推导出性格与价值观</div>
+            <div class="card-title">🔍 将分析以下3个维度</div>
+            <div style="margin-bottom:10px;font-size:12px;color:var(--text-dim);">先分别分析你的经历、追求和现状，再由AI整合成完整报告</div>
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;">
                 <div style="padding:12px;background:rgba(108,92,231,0.1);border-radius:10px;text-align:center;">
                     <div style="font-size:24px;">🛤️</div>
-                    <div style="font-weight:600;margin-top:4px;">人生经历</div>
-                    <div style="font-size:11px;color:var(--text-dim);">地点·事件·动机</div>
+                    <div style="font-weight:600;margin-top:4px;">经历</div>
+                    <div style="font-size:11px;color:var(--text-dim);">你走过的路</div>
                 </div>
                 <div style="padding:12px;background:rgba(255,107,107,0.1);border-radius:10px;text-align:center;">
                     <div style="font-size:24px;">🎯</div>
-                    <div style="font-weight:600;margin-top:4px;">兴趣爱好</div>
-                    <div style="font-size:11px;color:var(--text-dim);">时间线·演变</div>
+                    <div style="font-weight:600;margin-top:4px;">追求</div>
+                    <div style="font-size:11px;color:var(--text-dim);">你在意什么</div>
                 </div>
                 <div style="padding:12px;background:rgba(0,206,201,0.1);border-radius:10px;text-align:center;">
-                    <div style="font-size:24px;">🤝</div>
-                    <div style="font-weight:600;margin-top:4px;">人际关系</div>
-                    <div style="font-size:11px;color:var(--text-dim);">按人·时间线变化</div>
-                </div>
-                <div style="padding:12px;background:rgba(162,155,254,0.1);border-radius:10px;text-align:center;border:1px dashed rgba(162,155,254,0.4);">
-                    <div style="font-size:24px;">🧠</div>
-                    <div style="font-weight:600;margin-top:4px;">性格与价值观</div>
-                    <div style="font-size:11px;color:var(--text-dim);">由以上3维推断</div>
+                    <div style="font-size:24px;">📍</div>
+                    <div style="font-weight:600;margin-top:4px;">现状</div>
+                    <div style="font-size:11px;color:var(--text-dim);">你现在在哪</div>
                 </div>
             </div>
         </div>
@@ -191,23 +187,18 @@
         <div class="card">
             <div class="card-title">✅ 分析完成！</div>
             <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">
-                已生成3份报告，点击卡片可在线预览全部内容
+                已生成2份报告，点击卡片可在线预览
             </p>
             <div class="download-grid">
-                <div class="download-card" onclick="previewFile('analysis')">
-                    <div class="download-icon">🔬</div>
-                    <div class="download-title">分析过程报告</div>
-                    <div class="download-desc">包含完整分析过程和推理依据，供想要深入了解的人看</div>
-                </div>
                 <div class="download-card" onclick="previewFile('personal')">
                     <div class="download-icon">🪞</div>
                     <div class="download-title">个人阅读报告</div>
-                    <div class="download-desc">去掉了分析过程，只保留结论，给自己看的报告</div>
+                    <div class="download-desc">叙事化的个人故事——你走过的路、你在意什么、你现在在哪</div>
                 </div>
                 <div class="download-card" onclick="previewFile('ai')">
-                    <div class="download-icon">🤖</div>
+                    <div class="download-icon">💜</div>
                     <div class="download-title">AI专属报告</div>
-                    <div class="download-desc">让AI像朋友一样了解你，以朋友或伴侣的方式陪伴你</div>
+                    <div class="download-desc">灵魂伴侣认知手册——让AI真正理解你、陪伴你</div>
                 </div>
             </div>
         </div>
@@ -215,9 +206,8 @@
         <div class="card" style="margin-top:16px;">
             <div class="card-title" style="font-size:14px;margin-bottom:12px;">📥 下载报告文件</div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                <button class="btn btn-secondary" onclick="downloadFileBoth('analysis')" style="flex:1;min-width:150px;">🔬 分析过程报告</button>
                 <button class="btn btn-secondary" onclick="downloadFileBoth('personal')" style="flex:1;min-width:150px;">🪞 个人阅读报告</button>
-                <button class="btn btn-secondary" onclick="downloadFileBoth('ai')" style="flex:1;min-width:150px;">🤖 AI专属报告</button>
+                <button class="btn btn-secondary" onclick="downloadFileBoth('ai')" style="flex:1;min-width:150px;">💜 AI专属报告</button>
             </div>
             <div style="font-size:11px;color:var(--text-dim);margin-top:8px;">
                 💡 每个报告将同时下载 <strong style="color:#a855f7;">HTML</strong> 和 <strong style="color:#00cec9;">MD</strong> 两种格式

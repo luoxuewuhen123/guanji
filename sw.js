@@ -8,8 +8,8 @@ self.addEventListener('install', function(e) {
         '/index.html',
         '/app.html',
         '/app.css',
-        '/app-core.min.js',
-        '/app-ui.min.js'
+        '/app-core.js',
+        '/app-ui.js'
       ]);
     })
   );

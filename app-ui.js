@@ -898,12 +898,9 @@ async function startAnalysis() {
     
     // 文案轮播：当AI思考时显示有趣的进度文字
     const progressRotatingTexts = [
-        '正在拆解你的人生经历...',
-        '正在分析你和朋友们的关系...',
-        '正在推断你的性格底色...',
-        '正在梳理时间线...',
-        '正在寻找那些被遗忘的瞬间...',
-        '正在捕捉情绪的暗流...',
+        '正在梳理你的人生经历...',
+        '正在理解你在意什么...',
+        '正在感知你的现状...',
         '正在连接过去的你和现在的你...',
         'AI正在深度思考中...',
     ];
@@ -983,7 +980,7 @@ if (document.readyState === 'loading') {
 let currentPreviewType = null;
 
 function previewFile(type) {
-    const titles = { analysis: '🔬 分析过程报告', personal: '🪞 个人阅读报告', ai: '🤖 AI专属报告' };
+    const titles = { personal: '🪞 个人阅读报告', ai: '💜 AI专属报告' };
     const content = reports[type];
     
     if (!content) {
@@ -996,9 +993,9 @@ function previewFile(type) {
     // Markdown转HTML
     const htmlContent = markdownToHtml(content);
     
-    // 情绪晴雨表（仅在分析过程报告中显示）
+    // 情绪晴雨表（显示在个人阅读报告中）
     let emotionChartHtml = '';
-    if (type === 'analysis' && lastStructuredData && lastStructuredData.emotion_months) {
+    if (type === 'personal' && lastStructuredData && lastStructuredData.emotion_months) {
         emotionChartHtml = buildEmotionChart(lastStructuredData.emotion_months);
     }
     
@@ -1065,7 +1062,6 @@ function downloadFileBoth(type) {
     }
 
     const titles = {
-        analysis: '分析过程报告',
         personal: '个人阅读报告',
         ai: 'AI专属报告'
     };
@@ -1086,7 +1082,7 @@ function downloadFileBoth(type) {
     // 2️⃣ 下载 HTML
     const htmlBody = markdownToHtml(content);
     let emotionChartHtml = '';
-    if (type === 'analysis' && lastStructuredData && lastStructuredData.emotion_months) {
+    if (type === 'personal' && lastStructuredData && lastStructuredData.emotion_months) {
         emotionChartHtml = buildEmotionChart(lastStructuredData.emotion_months);
     }
     const fullHtml = `<!DOCTYPE html>
@@ -1138,7 +1134,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 function savePreviewAsHtml(type) {
-    const titles = { analysis: '分析过程报告', personal: '个人阅读报告', ai: 'AI专属报告' };
+    const titles = { personal: '个人阅读报告', ai: 'AI专属报告' };
     const content = reports[type];
     if (!content) {
         showToast('报告未生成', 'error');
