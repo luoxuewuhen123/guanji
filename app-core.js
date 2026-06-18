@@ -37,8 +37,6 @@ class DataCleaner {
         this.BOT_IDENTIFIERS = ['@openim', '@kefu', 'openim', 'kefu'];
         // 系统对话名称（文件传输助手、文件助手等，不是真实对话）
         this.SYSTEM_CONVERSATION_NAMES = ['文件传输助手', '文件助手', '文件传输', '微信团队', '系统消息', 'System Messages', '我的电脑', '我的手机', 'My Computer', 'My Phone'];
-        // 最低有效消息数
-        this.MIN_MESSAGES = 4;
         
         this.stats = {
             messages_filtered_media: 0,
@@ -48,7 +46,6 @@ class DataCleaner {
             messages_filtered_unknown_media: 0,
             conversations_filtered_blacklist: 0,
             conversations_filtered_bot: 0,
-            conversations_filtered_low_count: 0,
             conversations_filtered_no_valid: 0,
             blacklist_names: [],
         };
@@ -175,7 +172,6 @@ class DataCleaner {
 class ChatParser {
     constructor(cleaner) {
         this.cleaner = cleaner || new DataCleaner();
-        this.conversations = [];  // 每个文件=一个对话
     }
 
     // 判断发送者是否为"我"（支持别名配置）
@@ -491,256 +487,7 @@ class ChatParser {
         return null;
     }
 
-    // ========== AI聊天记录解析（增量同步用）==========
 
-    /**
-     * 解析AI聊天记录文件 — 自动识别格式
-     * 支持：
-     * 1. ChatGPT 导出 JSON (conversations[].mapping[].message)
-     * 2. ChatGPT 导出 JSONL (每行一个JSON: {role, content})
-     * 3. Claude 导出 JSON ({conversation: [{role, content}]})
-     * 4. 通用人机对话 TXT ([时间] 发送者: 内容)
-     * 5. Markdown 对话格式
-     */
-    parseAIChat(text, filename) {
-        const trimmed = text.trim();
-        if (!trimmed) return null;
-
-        // 尝试1: JSON格式
-        if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-            try {
-                const data = JSON.parse(trimmed);
-                const result = this._parseAIChatJSON(data, filename);
-                if (result && result.messages.length > 0) return result;
-            } catch(e) { /* 不是有效JSON，继续尝试其他格式 */ }
-        }
-
-        // 尝试2: JSONL格式（每行一个JSON）
-        if (trimmed.includes('\n')) {
-            const jsonlResult = this._parseAIChatJSONL(trimmed, filename);
-            if (jsonlResult && jsonlResult.messages.length > 0) return jsonlResult;
-        }
-
-        // 尝试3: 纯文本对话格式
-        const txtResult = this._parseAIChatTXT(trimmed, filename);
-        if (txtResult && txtResult.messages.length > 0) return txtResult;
-
-        return null;
-    }
-
-    _parseAIChatJSON(data, filename) {
-        const messages = [];
-
-        // ChatGPT导出格式：{ conversations: [{ mapping: { id: { message: { content: { parts: ["..."] }, author: { role: "..." } } } } }] }
-        if (data.conversations && Array.isArray(data.conversations)) {
-            for (const conv of data.conversations) {
-                if (!conv.mapping || typeof conv.mapping !== 'object') continue;
-                for (const [msgId, node] of Object.entries(conv.mapping)) {
-                    if (!node || !node.message) continue;
-                    const msg = node.message;
-                    const content = msg.content;
-
-                    // 提取文本内容
-                    let textContent = '';
-                    if (content && content.parts && Array.isArray(content.parts)) {
-                        textContent = content.parts.filter(p => typeof p === 'string').join('\n');
-                    } else if (typeof content === 'string') {
-                        textContent = content;
-                    }
-
-                    if (!textContent || !this.cleaner.is_valid_message(textContent)) continue;
-
-                    // 判断角色
-                    const role = (msg.author && msg.author.role) || 'unknown';
-                    const isMe = (role === 'user' || role === 'human' || role === 'you');
-                    const senderName = isMe ? '我' : 'AI';
-
-                    messages.push({
-                        source: 'ai_chat',
-                        sender: isMe ? 'me' : 'other',
-                        sender_name: senderName,
-                        content: textContent,
-                        timestamp: msg.create_time ? (msg.create_time > 1e12 ? msg.create_time : msg.create_time * 1000) : null,
-                        chat_with: 'AI对话',
-                        chat_type: 'private',
-                        is_me: isMe
-                    });
-                }
-            }
-        }
-        // Claude/通用格式：{ conversation: [...], chats: [...], messages: [...] }
-        else if (Array.isArray(data)) {
-            for (const item of data) {
-                const parsed = this._parseSingleAIMessage(item);
-                if (parsed) messages.push(parsed);
-            }
-        }
-        else if (data.conversation && Array.isArray(data.conversation)) {
-            for (const item of data.conversation) {
-                const parsed = this._parseSingleAIMessage(item);
-                if (parsed) messages.push(parsed);
-            }
-        }
-        else if (data.chats && Array.isArray(data.chats)) {
-            for (const item of data.chats) {
-                const parsed = this._parseSingleAIMessage(item);
-                if (parsed) messages.push(parsed);
-            }
-        }
-        else if (data.messages && Array.isArray(data.messages)) {
-            for (const item of data.messages) {
-                const parsed = this._parseSingleAIMessage(item);
-                if (parsed) messages.push(parsed);
-            }
-        }
-        // 单条消息包装
-        else if (data.role && data.content) {
-            const parsed = this._parseSingleAIMessage(data);
-            if (parsed) messages.push(parsed);
-        }
-
-        if (messages.length === 0) return null;
-        return { chat_with: 'AI对话记录', messages, source: 'ai_chat', chat_type: 'private' };
-    }
-
-    _parseSingleAIMessage(item) {
-        if (!item || typeof item !== 'object') return null;
-
-        let role = item.role || item.author || item.sender || '';
-        let content = '';
-
-        if (Array.isArray(item.content)) {
-            content = item.content.filter(p => typeof p === 'string').join('\n');
-        } else if (typeof item.content === 'string') {
-            content = item.content;
-        } else if (item.text) {
-            content = item.text;
-        } else if (item.message && typeof item.message === 'string') {
-            content = item.message;
-        }
-
-        if (!content || !this.cleaner.is_valid_message(content)) return null;
-
-        const isMe = ['user', 'human', 'you', 'me'].includes(String(role).toLowerCase());
-        return {
-            source: 'ai_chat',
-            sender: isMe ? 'me' : 'other',
-            sender_name: isMe ? '我' : 'AI',
-            content: content,
-            timestamp: item.timestamp || item.time || item.created_at || null,
-            chat_with: 'AI对话',
-            chat_type: 'private',
-            is_me: isMe
-        };
-    }
-
-    _parseAIChatJSONL(text, filename) {
-        const lines = text.split('\n').filter(l => l.trim().startsWith('{'));
-        const messages = [];
-        for (const line of lines) {
-            try {
-                const item = JSON.parse(line.trim());
-                const parsed = this._parseSingleAIMessage(item);
-                if (parsed) messages.push(parsed);
-            } catch(e) {}
-        }
-        if (messages.length === 0) return null;
-        return { chat_with: 'AI对话记录(JSONL)', messages, source: 'ai_chat', chat_type: 'private' };
-    }
-
-    _parseAIChatTXT(text, filename) {
-        const lines = text.split('\n');
-        const messages = [];
-        let currentMsg = null;
-
-        for (const rawLine of lines) {
-            const line = rawLine.replace(/\r$/, '');
-            if (!line.trim()) {
-                if (currentMsg && currentMsg.content && this.cleaner.is_valid_message(currentMsg.content)) {
-                    messages.push(currentMsg);
-                }
-                currentMsg = null;
-                continue;
-            }
-
-            // 格式1: [时间] You/AI/User/Assistant: 内容
-            const matchTimeRole = line.match(/^\[([^\]]*)\]\s*(You|User|user|AI|Assistant|assistant|Human|human)\s*[:：]\s*(.*)/);
-            if (matchTimeRole) {
-                if (currentMsg && currentMsg.content) {
-                    if (this.cleaner.is_valid_message(currentMsg.content)) messages.push(currentMsg);
-                }
-                const ts = this._parseTimestamp(matchTimeRole[1]);
-                const role = matchTimeRole[2];
-                const isMe = /^(You|User|user|Human|human)$/i.test(role);
-                currentMsg = {
-                    source: 'ai_chat',
-                    sender: isMe ? 'me' : 'other',
-                    sender_name: isMe ? '我' : 'AI',
-                    content: matchTimeRole[3],
-                    timestamp: ts,
-                    chat_with: 'AI对话',
-                    chat_type: 'private',
-                    is_me: isMe
-                };
-                continue;
-            }
-
-            // 格式2: **You** / **AI**: 内容（Markdown粗体）
-            const matchMdRole = line.match(/^\*{1,3}(You|User|AI|Assistant|Human)\*{1,3}\s*[:：]\s*(.*)/);
-            if (matchMdRole) {
-                if (currentMsg && currentMsg.content) {
-                    if (this.cleaner.is_valid_message(currentMsg.content)) messages.push(currentMsg);
-                }
-                const role = matchMdRole[1];
-                const isMe = /^(You|User|Human)$/i.test(role);
-                currentMsg = {
-                    source: 'ai_chat',
-                    sender: isMe ? 'me' : 'other',
-                    sender_name: isMe ? '我' : 'AI',
-                    content: matchMdRole[2],
-                    timestamp: null,
-                    chat_with: 'AI对话',
-                    chat_type: 'private',
-                    is_me: isMe
-                };
-                continue;
-            }
-
-            // 格式3: You: / AI: / User: / Assistant:
-            const matchSimple = line.match(/^(You|User|AI|Assistant|Human)\s*[:：]\s*(.*)/);
-            if (matchSimple) {
-                if (currentMsg && currentMsg.content) {
-                    if (this.cleaner.is_valid_message(currentMsg.content)) messages.push(currentMsg);
-                }
-                const role = matchSimple[1];
-                const isMe = /^(You|User|Human)$/i.test(role);
-                currentMsg = {
-                    source: 'ai_chat',
-                    sender: isMe ? 'me' : 'other',
-                    sender_name: isMe ? '我' : 'AI',
-                    content: matchSimple[2],
-                    timestamp: null,
-                    chat_with: 'AI对话',
-                    chat_type: 'private',
-                    is_me: isMe
-                };
-                continue;
-            }
-
-            // 多行内容追加
-            if (currentMsg) {
-                currentMsg.content += '\n' + line;
-            }
-        }
-
-        // 最后一条消息
-        if (currentMsg && currentMsg.content && this.cleaner.is_valid_message(currentMsg.content)) {
-            messages.push(currentMsg);
-        }
-
-        if (messages.length === 0) return null;
-        return { chat_with: 'AI对话记录', messages, source: 'ai_chat', chat_type: 'private' };
-    }
 }
 
 // ==================== AIClient ====================
@@ -987,28 +734,14 @@ function preExtractStructuredData(messages) {
     };
 }
 
-// ==================== 硬事实报告生成（对齐Python版 pre_build_facts_report） ====================
+// ==================== 硬事实报告 ====================
 function preBuildFactsReport(structured) {
     const parts = [];
-    parts.push('='.repeat(60));
-    parts.push('📊 硬事实数据（由代码提取，100%准确，AI可直接引用）');
-    parts.push('='.repeat(60));
-    
-    parts.push('\n## 基本信息');
-    parts.push(`- 数据时间范围: ${structured.time_range[0]} ~ ${structured.time_range[1]}`);
-    parts.push(`- 总消息数: ${structured.total_messages.toLocaleString()}`);
-    parts.push(`- 被分析者发的: ${structured.my_messages.toLocaleString()} (${(structured.my_messages/structured.total_messages*100).toFixed(1)}%)`);
-    
-    parts.push('\n## 年度消息分布');
-    for (const [year, count] of Object.entries(structured.year_distribution)) {
-        const bar = '█'.repeat(Math.floor(count / 1000)) + (count % 1000 > 500 ? '▌' : '');
-        parts.push(`  ${year}: ${count.toLocaleString()}条 ${bar}`);
-    }
-    
-    parts.push(`\n${'='.repeat(60)}`);
-    parts.push('⚠️ 以上数据由代码从原始消息中提取，时间戳和方向100%准确');
-    parts.push('='.repeat(60));
-    
+    parts.push(`📊 数据范围: ${structured.time_range[0]} ~ ${structured.time_range[1]}`);
+    parts.push(`📊 总消息: ${structured.total_messages.toLocaleString()}条 (你发了${structured.my_messages.toLocaleString()}条, ${(structured.my_messages/structured.total_messages*100).toFixed(1)}%)`);
+    parts.push(`📊 聊天对象: ${structured.chat_count}个`);
+    const yearDist = Object.entries(structured.year_distribution).map(([y, c]) => `${y}:${c.toLocaleString()}`).join(', ');
+    if (yearDist) parts.push(`📊 年度分布: ${yearDist}`);
     return parts.join('\n');
 }
 
@@ -1038,61 +771,39 @@ function verifyMessageDirection(messages, sampleSize = 20) {
 }
 
 
-// ==================== 准备数据（三维度差异化，共享好友过滤） ====================
-let _sharedFilteredMessages = null; // 缓存好友过滤结果，三个维度共享
-let _lastFilterDimension = '';
-
-function prepareDataForDimension(messages, dimension, SAFE_CHARS) {
-    // ---- 第一步：好友过滤（Top200 + 时间跨度>6个月）- 缓存复用 ----
-    if (!_sharedFilteredMessages || _lastFilterDimension !== dimension) {
-        _sharedFilteredMessages = null; // 切换维度时重置
+// ==================== 数据准备（好友过滤 + 经历维度采样） ====================
+function prepareJourneyData(messages, SAFE_CHARS) {
+    // 好友过滤（Top200 + 时间跨度>6个月 + 强制保留）
+    const friendStats = new Map();
+    for (const m of messages) {
+        const cw = m.chat_with || '未知';
+        if (!friendStats.has(cw)) friendStats.set(cw, { msgs: [], minTs: Infinity, maxTs: 0, tsSuccess: 0, tsFail: 0 });
+        const stat = friendStats.get(cw);
+        stat.msgs.push(m);
+        const ts = m.timestamp ? (typeof m.timestamp === 'number' ? m.timestamp : new Date(m.timestamp).getTime()) : 0;
+        if (ts > 0) { if (ts < stat.minTs) stat.minTs = ts; if (ts > stat.maxTs) stat.maxTs = ts; stat.tsSuccess++; }
+        else stat.tsFail++;
     }
-    let filteredMsgs;
-    if (_sharedFilteredMessages) {
-        filteredMsgs = _sharedFilteredMessages;
-    } else {
-        const friendStats = new Map();
-        for (const m of messages) {
-            const cw = m.chat_with || '未知';
-            if (!friendStats.has(cw)) friendStats.set(cw, { msgs: [], minTs: Infinity, maxTs: 0, tsSuccess: 0, tsFail: 0 });
-            const stat = friendStats.get(cw);
-            stat.msgs.push(m);
-            const ts = m.timestamp ? (typeof m.timestamp === 'number' ? m.timestamp : new Date(m.timestamp).getTime()) : 0;
-            if (ts > 0) { if (ts < stat.minTs) stat.minTs = ts; if (ts > stat.maxTs) stat.maxTs = ts; stat.tsSuccess++; }
-            else stat.tsFail++;
-        }
 
-        const SIX_MONTH_MS = 180 * 24 * 3600 * 1000;
-        const TOP_FRIEND_COUNT = 200;
-        const sortedFriends = [...friendStats.entries()].sort((a, b) => b[1].msgs.length - a[1].msgs.length);
-        const keptFriends = new Set();
-        for (let i = 0; i < sortedFriends.length; i++) {
-            const [cw, stat] = sortedFriends[i];
-            if (stat.tsSuccess === 0 && stat.tsFail > 0) { keptFriends.add(cw); continue; }
-            if (typeof forcedFriendNames !== 'undefined' && forcedFriendNames && forcedFriendNames.has(cw)) { keptFriends.add(cw); continue; }
-            if (i < TOP_FRIEND_COUNT) { keptFriends.add(cw); continue; }
-            if (stat.maxTs - stat.minTs > SIX_MONTH_MS) keptFriends.add(cw);
-        }
-        filteredMsgs = messages.filter(m => keptFriends.has(m.chat_with || '未知'));
-        _sharedFilteredMessages = filteredMsgs;
+    const SIX_MONTH_MS = 180 * 24 * 3600 * 1000;
+    const TOP_FRIEND_COUNT = 200;
+    const sortedFriends = [...friendStats.entries()].sort((a, b) => b[1].msgs.length - a[1].msgs.length);
+    const keptFriends = new Set();
+    for (let i = 0; i < sortedFriends.length; i++) {
+        const [cw, stat] = sortedFriends[i];
+        if (stat.tsSuccess === 0 && stat.tsFail > 0) { keptFriends.add(cw); continue; }
+        if (typeof forcedFriendNames !== 'undefined' && forcedFriendNames && forcedFriendNames.has(cw)) { keptFriends.add(cw); continue; }
+        if (i < TOP_FRIEND_COUNT) { keptFriends.add(cw); continue; }
+        if (stat.maxTs - stat.minTs > SIX_MONTH_MS) keptFriends.add(cw);
     }
-    _lastFilterDimension = dimension;
+    const filteredMsgs = messages.filter(m => keptFriends.has(m.chat_with || '未知'));
+    console.log(`[数据准备] 总消息=${messages.length}, 过滤后=${filteredMsgs.length}`);
 
-    console.log(`[数据准备] 维度=${dimension}, 总消息=${messages.length}, 过滤后=${filteredMsgs.length}`);
-
-    // ---- 第二步：按维度差异化取数据 ----
-    if (dimension === 'journey') return _prepareJourneyData(filteredMsgs, SAFE_CHARS);
-    if (dimension === 'pursuit') return _preparePursuitData(filteredMsgs, SAFE_CHARS);
-    if (dimension === 'current') return _prepareCurrentData(filteredMsgs, SAFE_CHARS);
-
-    // 兜底：均匀采样
-    return _prepareFallbackData(filteredMsgs, SAFE_CHARS);
+    return _prepareJourneyData(filteredMsgs, SAFE_CHARS);
 }
 
-// ========== 经历：每月等额预算，按对话段截取（保留完整对话流） ==========
+// ========== 经历：按消息量比例分配预算 + 好友加权 + 均匀块采样 ==========
 function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
-    const isMe = m => (m.sender === 'me' || m.sender === 'self' || m.is_me);
-    
     // 第一步：按月份分组
     const monthMap = new Map();
     for (const m of filteredMsgs) {
@@ -1106,12 +817,32 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
     const sortedMonths = [...monthMap.keys()].sort();
     if (sortedMonths.length === 0) return '';
 
-    const perMonthBudget = Math.floor(SAFE_CHARS / sortedMonths.length);
+    // 第二步：按各月消息量比例分配字符预算（保底500字/月）
+    const MIN_PER_MONTH = 500;
+    const totalMsgs = sortedMonths.reduce((s, k) => s + monthMap.get(k).length, 0);
+    const rawBudgets = sortedMonths.map(k => Math.floor((monthMap.get(k).length / totalMsgs) * SAFE_CHARS));
+    const budgets = rawBudgets.map(b => Math.max(b, MIN_PER_MONTH));
+    const budgetTotal = budgets.reduce((a, b) => a + b, 0);
+    if (budgetTotal > SAFE_CHARS) {
+        const reducible = budgets.filter(b => b > MIN_PER_MONTH).reduce((s, b) => s + (b - MIN_PER_MONTH), 0);
+        if (reducible > 0) {
+            const excess = budgetTotal - SAFE_CHARS;
+            for (let i = 0; i < budgets.length; i++) {
+                if (budgets[i] > MIN_PER_MONTH) {
+                    budgets[i] -= Math.floor(((budgets[i] - MIN_PER_MONTH) / reducible) * excess);
+                }
+            }
+        }
+    }
 
     const allParts = [];
     let prevYear = '';
-    for (const monthKey of sortedMonths) {
-        // 每年之间加显式分隔，防止AI跨年混淆事件
+
+    for (let mi = 0; mi < sortedMonths.length; mi++) {
+        const monthKey = sortedMonths[mi];
+        const msgs = monthMap.get(monthKey);
+        const budget = budgets[mi];
+
         const curYear = monthKey.substring(0, 4);
         if (curYear !== prevYear) {
             if (prevYear) allParts.push('');
@@ -1119,329 +850,72 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
             prevYear = curYear;
         }
 
-        const msgs = monthMap.get(monthKey);
-        // 第二步：在该月消息中找对话段
-        // 类型A：我主动发起（4+字，上一条不是我）
-        // 类型B：对方提问→我回应（4+字）
-        const starts = new Set();
-        for (let i = 0; i < msgs.length; i++) {
-            const m = msgs[i];
-            if (isMe(m)) {
-                const content = (m.content || '').trim();
-                if (content.length >= 4 && (i === 0 || !isMe(msgs[i - 1]))) {
-                    starts.add(i);
-                }
-            }
-            if (i + 1 < msgs.length && !isMe(msgs[i]) && isMe(msgs[i + 1])) {
-                const qContent = (msgs[i].content || '').trim();
-                const myContent = (msgs[i + 1].content || '').trim();
-                if (/[？?]/.test(qContent) && myContent.length >= 4) {
-                    let alreadyCovered = false;
-                    for (const s of starts) {
-                        if (Math.abs(s - i) <= 2) { alreadyCovered = true; break; }
-                    }
-                    if (!alreadyCovered) starts.add(i);
-                }
-            }
-        }
-        const sortedStarts = [...starts].sort((a, b) => a - b);
-
-        // 如果没找到任何段，退回到用单条消息+时间排序（至少有点东西）
-        if (sortedStarts.length === 0) {
-            const lines = [`📅 ${monthKey}`];
-            let chars = lines[0].length + 1;
-            // 按时间取前N条（月度预算内）
-            for (const m of msgs) {
-                const line = _buildMsgLine(m);
-                if (chars + line.length > perMonthBudget) break;
-                lines.push(line);
-                chars += line.length + 1;
-            }
-            if (lines.length > 1) allParts.push(lines.join('\n'));
-            continue;
+        // 第三步：按聊天对象分组，按消息量比例分配该月预算
+        const friendGroups = new Map(); // chat_with -> [messages]
+        for (const m of msgs) {
+            const cw = m.chat_with || '未知';
+            if (!friendGroups.has(cw)) friendGroups.set(cw, []);
+            friendGroups.get(cw).push(m);
         }
 
-        // 构造对话段
-        const segments = [];
-        for (let s = 0; s < sortedStarts.length; s++) {
-            const startIdx = sortedStarts[s];
-            const endIdx = s + 1 < sortedStarts.length ? sortedStarts[s + 1] : msgs.length;
-            // 段至少包含"我"发起的消息才有意义
-            const seg = msgs.slice(startIdx, endIdx);
-            const hasMeContent = seg.some(m => isMe(m) && (m.content || '').trim().length > 0);
-            if (hasMeContent) segments.push(seg);
+        const sortedFriends = [...friendGroups.entries()].sort((a, b) => b[1].length - a[1].length);
+        const totalMonthMsgs = msgs.length;
+
+        // 给每个好友分配该月预算（按消息量比例）
+        const friendBudgets = new Map();
+        for (const [name, fMsgs] of sortedFriends) {
+            friendBudgets.set(name, Math.floor((fMsgs.length / totalMonthMsgs) * budget));
         }
 
-        // 第三步：评分——我发言频率 + 对话来回深度
-        for (const seg of segments) {
-            let turnCount = 0;
-            for (let i = 1; i < seg.length; i++) {
-                if (isMe(seg[i]) !== isMe(seg[i-1])) turnCount++;
-            }
-            const myCount = seg.filter(m => isMe(m)).length;
-            seg._score = myCount * 10 + turnCount * 8;
-        }
-
-        // 第四步：按分降序取段 → 再加月度预算限制（保留整段，不打断对话流）
-        segments.sort((a, b) => (b._score || 0) - (a._score || 0));
-        const selectedSegs = [];
-        let chars = `📅 ${monthKey}`.length + 1;
-        for (const seg of segments) {
-            let segLen = 1; // 末尾换行
-            for (const m of seg) {
-                segLen += _buildMsgLine(m).length + 1;
-            }
-            if (chars + segLen > perMonthBudget && selectedSegs.length > 0) break;
-            selectedSegs.push(seg);
-            chars += segLen;
-        }
-
-        // 第五步：按时间排序输出（段内自然有序，段间按段首时间）
-        selectedSegs.sort((a, b) => {
-            const ta = a[0].timestamp ? (typeof a[0].timestamp === 'number' ? a[0].timestamp : new Date(a[0].timestamp).getTime()) : 0;
-            const tb = b[0].timestamp ? (typeof b[0].timestamp === 'number' ? b[0].timestamp : new Date(b[0].timestamp).getTime()) : 0;
-            return ta - tb;
-        });
-
+        // 第四步：对每个好友组做均匀块采样
+        // 块采样：按步长取中心消息，每条带前后±1条邻居，合并重叠块
         const lines = [`📅 ${monthKey}`];
-        for (const seg of selectedSegs) {
-            for (const m of seg) {
-                lines.push(_buildMsgLine(m));
+        let chars = lines[0].length + 1;
+
+        for (const [name, fMsgs] of sortedFriends) {
+            const fBudget = friendBudgets.get(name) || 0;
+            // 不够2条消息的预算就跳过这个好友
+            if (fBudget < 100) continue;
+
+            // 预算能放多少条（估算每条60字符）
+            const avgLineLen = 60;
+            const maxCount = Math.max(1, Math.floor(fBudget / avgLineLen));
+
+            // 均匀步长
+            const step = Math.max(1, Math.floor(fMsgs.length / maxCount));
+
+            // 取块索引：每个步长取中心 ±1
+            const blockIdx = new Set();
+            for (let i = 0; i < fMsgs.length; i += step) {
+                for (let j = Math.max(0, i - 1); j <= Math.min(fMsgs.length - 1, i + 1); j++) {
+                    blockIdx.add(j);
+                }
             }
-            lines.push(''); // 段间空行
+
+            // 合并间隔≤2的块
+            const sorted = [...blockIdx].sort((a, b) => a - b);
+            const blocks = [];
+            let bStart = sorted[0], bEnd = sorted[0];
+            for (let i = 1; i < sorted.length; i++) {
+                if (sorted[i] - bEnd <= 2) { bEnd = sorted[i]; }
+                else { blocks.push(fMsgs.slice(bStart, bEnd + 1)); bStart = bEnd = sorted[i]; }
+            }
+            blocks.push(fMsgs.slice(bStart, bEnd + 1));
+
+            // 输出块，用完好友预算或月预算为止
+            for (const block of blocks) {
+                const blockChars = block.reduce((s, m) => s + _buildMsgLine(m).length + 1, 0);
+                if (chars + blockChars > budget) break;
+                block.forEach(m => lines.push(_buildMsgLine(m)));
+                lines.push('');
+                chars += blockChars;
+            }
+            if (chars >= budget) break;
         }
+
         if (lines.length > 1) allParts.push(lines.join('\n'));
     }
     return allParts.join('\n\n');
-}
-
-// ========== 追求：找我发起 + 对方提问引起的重要回应，跨月去重（内容指纹宽松） ==========
-function _preparePursuitData(filteredMsgs, SAFE_CHARS) {
-    const isMe = m => (m.sender === 'me' || m.sender === 'self' || m.is_me);
-
-    // 第一步：在完整消息流中找所有可能段的起始位置
-    // 类型A："我"主动发起（4+字，上一条不是我）
-    // 类型B：对方提问（含？/？），紧接着我回应4+字
-    const starts = new Set();
-    for (let i = 0; i < filteredMsgs.length; i++) {
-        // 类型A：我发起
-        const m = filteredMsgs[i];
-        if (isMe(m)) {
-            const content = (m.content || '').trim();
-            if (content.length >= 4 && (i === 0 || !isMe(filteredMsgs[i - 1]))) {
-                starts.add(i);
-            }
-        }
-        // 类型B：对方提问→我回答（i=对方提问，i+1=我的回答）
-        if (i + 1 < filteredMsgs.length && !isMe(filteredMsgs[i]) && isMe(filteredMsgs[i + 1])) {
-            const qContent = (filteredMsgs[i].content || '').trim();
-            const myContent = (filteredMsgs[i + 1].content || '').trim();
-            if (/[？?]/.test(qContent) && myContent.length >= 4) {
-                // 检查这个位置是否已被类型A覆盖
-                let alreadyCovered = false;
-                for (const s of starts) {
-                    if (Math.abs(s - i) <= 2) { alreadyCovered = true; break; }
-                }
-                if (!alreadyCovered) starts.add(i); // 从对方提问开始
-            }
-        }
-    }
-
-    const sortedStarts = [...starts].sort((a, b) => a - b);
-    if (sortedStarts.length === 0) return '';
-
-    // 第二步：构造段落
-    const segments = [];
-    for (let s = 0; s < sortedStarts.length; s++) {
-        const startIdx = sortedStarts[s];
-        const endIdx = s + 1 < sortedStarts.length ? sortedStarts[s + 1] : filteredMsgs.length;
-        const seg = filteredMsgs.slice(startIdx, endIdx);
-        // 段内必须有我的内容
-        if (seg.some(m => isMe(m) && (m.content || '').trim().length > 0)) {
-            segments.push(seg);
-        }
-    }
-
-    // 第三步：统一评分
-    for (const seg of segments) {
-        let turnCount = 0;
-        for (let i = 1; i < seg.length; i++) {
-            if (isMe(seg[i]) !== isMe(seg[i-1])) turnCount++;
-        }
-        const myCount = seg.filter(m => isMe(m)).length;
-        seg._score = myCount * 10 + turnCount * 8;
-    }
-    segments.sort((a, b) => b._score - a._score);
-
-    // 第四步：宽松去重——取前20字 + 整段内容的simhash指纹
-    const unique = [];
-    for (const seg of segments) {
-        const firstMy = seg.find(m => isMe(m));
-        if (!firstMy) continue;
-        // 取前20字指纹
-        const fp = (firstMy.content || '').trim().substring(0, 20);
-        // 取整段内容的关键词指纹（取所有4字以上中文词的前4个字）
-        const allText = seg.map(m => m.content || '').join('');
-        const keyWords = new Set();
-        for (const w of allText.match(/[\u4e00-\u9fff]{4,}/g) || []) {
-            keyWords.add(w.substring(0, 4));
-        }
-        const contentFingerprint = [...keyWords].sort().join(',');
-        // 去重：前20字相同 且 关键词指纹重合度>60%
-        let isDuplicate = false;
-        for (const existing of unique) {
-            if (existing._fp === fp && existing._contentFingerprint === contentFingerprint) {
-                isDuplicate = true; break;
-            }
-            // 如果前20字相同，但内容指纹不同——不是重复
-            if (existing._fp === fp && existing._contentFingerprint !== contentFingerprint) {
-                // 计算内容指纹重合度
-                const existingWords = existing._contentFingerprint.split(',');
-                const currentWords = contentFingerprint.split(',');
-                const overlap = currentWords.filter(w => existingWords.includes(w)).length;
-                const maxLen = Math.max(currentWords.length, existingWords.length);
-                if (maxLen > 0 && overlap / maxLen > 0.6) {
-                    isDuplicate = true; break;
-                }
-            }
-        }
-        if (!isDuplicate) {
-            seg._fp = fp;
-            seg._contentFingerprint = contentFingerprint;
-            unique.push(seg);
-        }
-    }
-
-    // 第五步：按时间排序输出
-    unique.sort((a, b) => {
-        const ta = a[0].timestamp ? (typeof a[0].timestamp === 'number' ? a[0].timestamp : new Date(a[0].timestamp).getTime()) : 0;
-        const tb = b[0].timestamp ? (typeof b[0].timestamp === 'number' ? b[0].timestamp : new Date(b[0].timestamp).getTime()) : 0;
-        return ta - tb;
-    });
-
-    const lines = [];
-    let chars = 0;
-    for (const seg of unique) {
-        for (const m of seg) {
-            const line = _buildMsgLine(m);
-            if (chars + line.length > SAFE_CHARS) break;
-            lines.push(line); chars += line.length + 1;
-        }
-        lines.push(''); chars += 1;
-        if (chars > SAFE_CHARS) break;
-    }
-    console.log(`[追求] ${segments.length}段候选, 去重后${unique.length}个, ${chars}字`);
-    return lines.join('\n');
-}
-
-// ========== 现状：180天内，按对话段评分（评分公式与其他维度统一）+ 新鲜度加成 ==========
-function _prepareCurrentData(filteredMsgs, SAFE_CHARS) {
-    const now = Date.now();
-    const DAY = 86400000;
-    const isMe = m => (m.sender === 'me' || m.sender === 'self' || m.is_me);
-
-    // 第一步：取最近180天的消息
-    const recentMsgs = filteredMsgs.filter(m => {
-        const ts = m.timestamp ? (typeof m.timestamp === 'number' ? m.timestamp : new Date(m.timestamp).getTime()) : 0;
-        return ts > 0 && (now - ts) / DAY <= 180;
-    });
-    if (recentMsgs.length === 0) return '';
-
-    // 第二步：找对话段（我发起 + 对方提问引起的重要回应）
-    const starts = new Set();
-    for (let i = 0; i < recentMsgs.length; i++) {
-        const m = recentMsgs[i];
-        if (isMe(m)) {
-            const content = (m.content || '').trim();
-            if (content.length >= 4 && (i === 0 || !isMe(recentMsgs[i - 1]))) {
-                starts.add(i);
-            }
-        }
-        if (i + 1 < recentMsgs.length && !isMe(recentMsgs[i]) && isMe(recentMsgs[i + 1])) {
-            const qContent = (recentMsgs[i].content || '').trim();
-            const myContent = (recentMsgs[i + 1].content || '').trim();
-            if (/[？?]/.test(qContent) && myContent.length >= 4) {
-                let alreadyCovered = false;
-                for (const s of starts) {
-                    if (Math.abs(s - i) <= 2) { alreadyCovered = true; break; }
-                }
-                if (!alreadyCovered) starts.add(i);
-            }
-        }
-    }
-    const sortedStarts = [...starts].sort((a, b) => a - b);
-
-    if (sortedStarts.length === 0) return '';
-
-    // 构造对话段
-    const segments = [];
-    for (let s = 0; s < sortedStarts.length; s++) {
-        const startIdx = sortedStarts[s];
-        const endIdx = s + 1 < sortedStarts.length ? sortedStarts[s + 1] : recentMsgs.length;
-        const seg = recentMsgs.slice(startIdx, endIdx);
-        const hasMeContent = seg.some(m => isMe(m) && (m.content || '').trim().length > 0);
-        if (hasMeContent) segments.push(seg);
-    }
-
-    // 第三步：统一评分（我发言频率+来回次数）+ 新鲜度加成
-    for (const seg of segments) {
-        let turnCount = 0;
-        for (let i = 1; i < seg.length; i++) {
-            if (isMe(seg[i]) !== isMe(seg[i-1])) turnCount++;
-        }
-        const myCount = seg.filter(m => isMe(m)).length;
-        // 基础分：统一公式
-        let score = myCount * 10 + turnCount * 8;
-        // 新鲜度加成：段内最新消息的时间决定
-        const maxTs = seg.reduce((max, m) => Math.max(max, m.timestamp ? (typeof m.timestamp === 'number' ? m.timestamp : new Date(m.timestamp).getTime()) : 0), 0);
-        const daysAgo = (now - maxTs) / DAY;
-        if (daysAgo <= 7) score += 40;
-        else if (daysAgo <= 30) score += 25;
-        else if (daysAgo <= 90) score += 10;
-        seg._score = score;
-    }
-
-    // 第四步：按分降序取段（预算内），再按时间排序输出
-    segments.sort((a, b) => (b._score || 0) - (a._score || 0));
-    const selectedSegs = [];
-    let chars = 0;
-    for (const seg of segments) {
-        let segChars = 1;
-        for (const m of seg) segChars += _buildMsgLine(m).length + 1;
-        if (chars + segChars > SAFE_CHARS) break;
-        selectedSegs.push(seg);
-        chars += segChars;
-    }
-    // 按段首时间排序输出，保持时间线连贯
-    selectedSegs.sort((a, b) => {
-        const ta = a[0].timestamp ? (typeof a[0].timestamp === 'number' ? a[0].timestamp : new Date(a[0].timestamp).getTime()) : 0;
-        const tb = b[0].timestamp ? (typeof b[0].timestamp === 'number' ? b[0].timestamp : new Date(b[0].timestamp).getTime()) : 0;
-        return ta - tb;
-    });
-    const lines = []; chars = 0;
-    for (const seg of selectedSegs) {
-        for (const m of seg) { const line = _buildMsgLine(m); lines.push(line); chars += line.length + 1; }
-        lines.push(''); chars += 1;
-    }
-    console.log(`[现状] ${segments.length}段候选, 选中${selectedSegs.length}段, ${chars}字`);
-    return lines.join('\n');
-}
-
-// ========== 兜底：均匀时间采样 ==========
-function _prepareFallbackData(filteredMsgs, SAFE_CHARS) {
-    const sorted = [...filteredMsgs].sort((a, b) => {
-        const ta = a.timestamp ? (typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime()) : 0;
-        const tb = b.timestamp ? (typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime()) : 0;
-        return ta - tb;
-    });
-    const step = Math.max(1, Math.floor(sorted.length / (SAFE_CHARS / 40)));
-    const lines = []; let chars = 0;
-    for (let i = 0; i < sorted.length; i += step) {
-        const line = _buildMsgLine(sorted[i]);
-        if (chars + line.length > SAFE_CHARS) break;
-        lines.push(line); chars += line.length + 1;
-    }
-    return lines.join('\n');
 }
 
 // ========== 通用：构建消息行文本 ==========
@@ -1456,9 +930,8 @@ function _buildMsgLine(m) {
     return parts.length ? `${parts.join('')} ${sender}: ${content}` : `${sender}: ${content}`;
 }
 
-// ==================== 通用校验规则（所有维度共享，防止AI把对方的事误归给用户） ====================
 
-// ==================== GuanjiAnalyzer（三维：经历→追求→现状） ====================
+// ==================== GuanjiAnalyzer（单维：经历叙事） ====================
 class GuanjiAnalyzer {
     constructor(aiClient, onLog = null) {
         this.ai = aiClient;
@@ -1477,274 +950,181 @@ class GuanjiAnalyzer {
 
     async analyze(options = {}) {
         const { onProgress = () => {} } = options;
-        const results = {};
         const maxChars = 150000;
 
-        // 三维：各自独立数据准备，并发分析
-        const dimensions = [
-            { key: 'journey', name: '经历分析', analyzer: '_analyzeJourney' },
-            { key: 'pursuit', name: '追求分析', analyzer: '_analyzePursuit' },
-            { key: 'current', name: '现状分析', analyzer: '_analyzeCurrent' },
-        ];
+        // 准备经历维度数据：好友过滤 + 每月等额对话段采样
+        this.log('  📚 经历数据准备中...', 'info');
+        onProgress(1, 2, '准备经历数据...');
+        const journeyData = prepareJourneyData(this.messages, maxChars);
+        let input = this.factsReport + '\n\n' + journeyData;
+        if (input.length > maxChars) input = input.substring(0, maxChars);
+        this.log(`  📚 经历数据准备完成: ${input.length.toLocaleString()} 字符`, 'info');
 
-        // 所有维度独立准备数据
-        const preparedData = [];
-        for (let i = 0; i < dimensions.length; i++) {
-            const dim = dimensions[i];
-            const dimData = prepareDataForDimension(this.messages, dim.key, maxChars);
-            let input = this.factsReport + '\n\n' + dimData;
-            if (input.length > maxChars) input = input.substring(0, maxChars);
-            this.log(`  ${dim.name}数据准备完成: ${input.length.toLocaleString()} 字符`, 'info');
-            preparedData.push(input);
-        }
-        this.log(`  📊 数据准备: Top200好友+长期关系保护 → 按维度差异化策略（经历=每月等额/追求=主动发起/现状=时间衰减） → 上下文窗口合并`, 'info');
+        this.log('[1/2] AI经历分析中...', 'info');
+        onProgress(2, 2, 'AI正在生成你的人生叙事...');
 
-        const total = dimensions.length;
-        let completed = 0;
-
-        // 三维并发执行
-        const promises = dimensions.map((dim, i) => {
-            this.log(`[${completed+1}/${total}] ${dim.name}中...`, 'info');
-            onProgress(completed + 1, total, `${dim.name}中...`);
-            return this._retryAnalyze(dim, preparedData[i], 1)
-                .then(result => {
-                    results[dim.key] = result;
-                    completed++;
-                    this.log(`[OK] ${dim.name}完成 (${completed}/${total})`, 'success');
-                    return result;
-                });
-        });
-        await Promise.all(promises);
-
-        return this._preCleanAnalyses(results, this.structuredData);
-    }
-
-    async _retryAnalyze(dim, inputData, maxRetries = 1) {
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        // 单次AI调用，带重试
+        let result = null;
+        for (let attempt = 0; attempt <= 1; attempt++) {
             try {
-                return await this[dim.analyzer](inputData);
+                result = await this._analyzeJourney(input);
+                break;
             } catch (err) {
-                if (attempt < maxRetries) {
-                    const waitMs = 5000;
-                    this.log(`[RETRY] ${dim.name}失败，${waitMs/1000}s后重试(${attempt+1}/${maxRetries}): ${err.message}`, 'warning');
-                    await new Promise(r => setTimeout(r, waitMs));
+                if (attempt < 1) {
+                    this.log(`[RETRY] 经历分析失败，5s后重试: ${err.message}`, 'warning');
+                    await new Promise(r => setTimeout(r, 5000));
                 } else {
-                    this.log(`[ERROR] ${dim.name}最终失败(${maxRetries+1}次尝试): ${err.message}`, 'error');
-                    return `（分析失败: ${err.message}）`;
+                    this.log(`[ERROR] 经历分析最终失败: ${err.message}`, 'error');
+                    result = `（分析失败: ${err.message}）`;
                 }
             }
         }
+
+        // 清理AI输出中的废话和真名泄露
+        return this._cleanJourneyAnalysis(result, this.structuredData);
     }
 
-    _preCleanAnalyses(analyses, structuredData) {
-        const result = {};
-        // 获取数据覆盖的年份列表（用于年份校验）
+    _cleanJourneyAnalysis(text, structuredData) {
+        if (typeof text !== 'string') return { journey: text };
+
         const validYears = structuredData && structuredData.year_distribution
-            ? Object.keys(structuredData.year_distribution).map(Number)
-            : [];
+            ? Object.keys(structuredData.year_distribution).map(Number) : [];
         const minYear = validYears.length > 0 ? Math.min(...validYears) : null;
         const maxYear = validYears.length > 0 ? Math.max(...validYears) : null;
 
-        for (const [key, text] of Object.entries(analyses)) {
-            if (typeof text !== 'string') { result[key] = text; continue; }
-            let cleaned = text;
-            
-            // 1. 去掉AI开场白（匹配各种变体，从开头到第一个##/###标题之前的所有内容）
-            // 策略：找到第一个标题的位置，把它之前的所有"废话段落"删掉
-            const firstHeading = cleaned.search(/\n#{2,3} /);
-            if (firstHeading > 0) {
-                const beforeHeading = cleaned.substring(0, firstHeading);
-                // 保留有意义的结构（表格、分隔线、标题行），只删掉"废话段落"
-                const meaningfulLines = beforeHeading.split('\n').filter(line => {
-                    const trimmed = line.trim();
-                    if (!trimmed) return true; // 空行保留（后续统一清理）
-                    if (trimmed.startsWith('#')) return true; // 标题
-                    if (trimmed.startsWith('|')) return true; // 表格
-                    if (trimmed === '---') return true; // 分隔线
-                    if (trimmed.startsWith('>')) return true; // 引用
-                    // 检测开场白特征
-                    if (/^(好的|遵照|作为|我将|这是|朋友|没问题|明白了|收到|了解了|没问题)/.test(trimmed)) return false;
-                    if (/(分析师|分析专家|我将严格|遵循你的要求|我将为您|我已仔细|根据您提供|根据你提供|我已经仔细|读完|遵照您的指示|我是.*?叙事者|我是.*?分析者|让我根据你)/.test(trimmed)) return false;
-                    return true; // 其他内容保留
-                });
-                cleaned = meaningfulLines.join('\n') + cleaned.substring(firstHeading);
-            }
-            // 清理开头可能残留的空行和---
-            cleaned = cleaned.replace(/^\n+/, '');
-            cleaned = cleaned.replace(/^---\s*\n*/, '');
-            
-            // 2. 去掉"以下称'xxx'"整行，替换AI捏造名字→"你"
-            const namePattern = cleaned.match(/以下称[\'""']?(\w{2,4})[\'""']?/);
-            if (namePattern) {
-                const fakeName = namePattern[1];
-                cleaned = cleaned.split('\n').filter(line => !line.includes('以下称')).join('\n');
-                cleaned = cleaned.replace(new RegExp(fakeName, 'g'), '你');
-            }
-            
-            // 3. 清理残留来源标记
-            cleaned = cleaned.replace(/\s*\[来源：[^\]]*\]/g, '');
-            cleaned = cleaned.replace(/\s*（来源：[^）]*）?/g, '');
-            
-            // 4. 检测并替换AI提取的真实姓名→"你"
-            // 匹配"被分析者（XXX）""被分析者(XXX)"格式，提取括号中的名字
-            const realNameMatch = cleaned.match(/被分析者[（(]([\u4e00-\u9fa5]{2,4})[）)]/);
-            if (realNameMatch) {
-                const realName = realNameMatch[1];
-                // 排除常见非名字词（如"本人""此人"等）
-                if (!['本人','此人','个体','对象','用户','主角'].includes(realName)) {
-                    cleaned = cleaned.replace(new RegExp(realName, 'g'), '你');
-                }
-            }
-            // 清理"被分析者（你）"→"你"（替换后的残留格式）
-            cleaned = cleaned.replace(/被分析者[（(]你[）)]/g, '你');
-            // 清理独立出现的"被分析者"→"你"（AI分析中的通用称呼）
-            cleaned = cleaned.replace(/被分析者/g, '你');
-            
-            // 5a. 通用真名泄露防护：扫描结婚/新人/伴侣语境下的名字组合
-            // 匹配 "XXX和YYY" 两个中文名用"和"连接的模式（常见于结婚相关文本）
-            const weddingNamePatterns = [
-                /(?:新人|夫妻|夫妇|伴侣|结婚|婚礼|领证|请柬|喜帖|邀请函|老公老婆)[：:]\s*([\u4e00-\u9fa5]{2,4})和([\u4e00-\u9fa5]{2,4})/g,
-                /([\u4e00-\u9fa5]{2,4})和([\u4e00-\u9fa5]{2,4})(?:的婚礼|的结婚|的请柬|的喜帖|的领证|结婚了|办婚礼|登记了)/g,
-                /(?:恭喜|祝福)([\u4e00-\u9fa5]{2,4})和([\u4e00-\u9fa5]{2,4})/g
-            ];
-            
-            for (const wp of weddingNamePatterns) {
-                let match;
-                while ((match = wp.exec(cleaned)) !== null) {
-                    const name1 = match[1] || '';
-                    const name2 = match[2] || '';
-                    // 排除非名字词
-                    if (!['本人','此人','个体','对象','用户','主角','大家','朋友'].includes(name1) && 
-                        !['本人','此人','个体','对象','用户','主角','大家','朋友'].includes(name2)) {
-                        cleaned = cleaned.substring(0, match.index) + 
-                            cleaned.substring(match.index).replace(match[0], '你和你伴侣');
-                        break; // 只替换第一个匹配避免误替换
-                    }
-                }
-            }
-            
-            // 5. 兜底：清理残留的可信度标识（prompt已不要求，但AI可能仍输出）
-            cleaned = cleaned.replace(/[🟢🟡🔴]\s*(高可信|中可信|低可信|确认|疑似|待确认)?/g, '');
-            cleaned = cleaned.replace(/（?🟢[^）]*）?/g, ''); // 残留的括号标注
-            cleaned = cleaned.replace(/（?🟡[^）]*）?/g, '');
-            cleaned = cleaned.replace(/（?🔴[^）]*）?/g, '');
-            cleaned = cleaned.replace(/\s*可信度[：:]\s*高|中|低/g, '');
+        let cleaned = text;
 
-            // === 年份校验：扫描报告中出现的所有YYYY年，与数据覆盖年份对比 ===
-            if (minYear !== null && maxYear !== null) {
-                const yearMatches = [...cleaned.matchAll(/(\d{4})年/g)];
-                const suspiciousYears = yearMatches
-                    .map(m => parseInt(m[1]))
-                    .filter(y => y < minYear || y > maxYear);
-                if (suspiciousYears.length > 0) {
-                    const uniqueSuspicious = [...new Set(suspiciousYears)];
-                    // 找出每个可疑年份在报告中的上下文（前后各15字）
-                    const yearContexts = uniqueSuspicious.map(y => {
-                        const idx = cleaned.indexOf(`${y}年`);
-                        if (idx >= 0) {
-                            const ctxStart = Math.max(0, idx - 12);
-                            const ctxEnd = Math.min(cleaned.length, idx + `${y}年`.length + 12);
-                            return `"${y}年"（…${cleaned.slice(ctxStart, ctxEnd).replace(/\n/g, ' ')}…）`;
-                        }
-                        return `"${y}年"`;
-                    });
-                    cleaned += `\n\n:::year-warning\n⚠️ **年份存疑提醒**：报告中出现了数据覆盖范围之外的年份 ${yearContexts.join('、')}，但数据只覆盖 ${minYear}-${maxYear} 年，请人工复核。\n:::`;
-                }
-            }
-
-            result[key] = cleaned.trim();
+        // 1. 去掉AI开场白（从开头到第一个##/###标题之前的内容）
+        const firstHeading = cleaned.search(/\n#{2,3} /);
+        if (firstHeading > 0) {
+            const beforeHeading = cleaned.substring(0, firstHeading);
+            const meaningfulLines = beforeHeading.split('\n').filter(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return true;
+                if (trimmed.startsWith('#') || trimmed.startsWith('|') || trimmed === '---' || trimmed.startsWith('>')) return true;
+                if (/^(好的|遵照|作为|我将|这是|朋友|没问题|明白了|收到|了解了|没问题)/.test(trimmed)) return false;
+                if (/(分析师|分析专家|我将严格|遵循你的要求|我将为您|我已仔细|根据您提供|根据你提供|我已经仔细|读完|遵照您的指示|我是.*?叙事者|我是.*?分析者|让我根据你)/.test(trimmed)) return false;
+                return true;
+            });
+            cleaned = meaningfulLines.join('\n') + cleaned.substring(firstHeading);
         }
-        return result;
+        cleaned = cleaned.replace(/^\n+/, '').replace(/^---\s*\n*/, '');
+
+        // 2. 替换AI捏造名字→"你"
+        const namePattern = cleaned.match(/以下称[\'""']?(\w{2,4})[\'""']?/);
+        if (namePattern) {
+            const fakeName = namePattern[1];
+            cleaned = cleaned.split('\n').filter(line => !line.includes('以下称')).join('\n');
+            cleaned = cleaned.replace(new RegExp(fakeName, 'g'), '你');
+        }
+
+        // 3. 清理来源标记
+        cleaned = cleaned.replace(/\s*\[来源：[^\]]*\]/g, '').replace(/\s*（来源：[^）]*）?/g, '');
+
+        // 4. 检测并替换真实姓名→"你"
+        const realNameMatch = cleaned.match(/被分析者[（(]([\u4e00-\u9fa5]{2,4})[）)]/);
+        if (realNameMatch) {
+            const realName = realNameMatch[1];
+            if (!['本人','此人','个体','对象','用户','主角'].includes(realName)) {
+                cleaned = cleaned.replace(new RegExp(realName, 'g'), '你');
+            }
+        }
+        cleaned = cleaned.replace(/被分析者[（(]你[）)]/g, '你').replace(/被分析者/g, '你');
+
+        // 5. 结婚/伴侣姓名防护
+        const weddingPatterns = [
+            /(?:新人|夫妻|夫妇|伴侣|结婚|婚礼|领证|请柬|喜帖|邀请函|老公老婆)[：:]\s*([\u4e00-\u9fa5]{2,4})和([\u4e00-\u9fa5]{2,4})/g,
+            /([\u4e00-\u9fa5]{2,4})和([\u4e00-\u9fa5]{2,4})(?:的婚礼|的结婚|的请柬|的喜帖|的领证|结婚了|办婚礼|登记了)/g,
+        ];
+        for (const wp of weddingPatterns) {
+            const match = wp.exec(cleaned);
+            if (match) {
+                const exclude = ['本人','此人','个体','对象','用户','主角','大家','朋友'];
+                if (!exclude.includes(match[1]) && !exclude.includes(match[2])) {
+                    const repl = cleaned.substring(0, match.index) + cleaned.substring(match.index).replace(match[0], '你和你伴侣');
+                    if (repl !== cleaned) { cleaned = repl; break; }
+                }
+            }
+        }
+
+        // 6. 清理可信度标识
+        cleaned = cleaned.replace(/[🟢🟡🔴]\s*(高可信|中可信|低可信|确认|疑似|待确认)?/g, '');
+        cleaned = cleaned.replace(/（?[🟢🟡🔴][^）]*）?/g, '');
+        cleaned = cleaned.replace(/\s*可信度[：:]\s*高|中|低/g, '');
+
+        // 7. 年份校验
+        if (minYear !== null && maxYear !== null) {
+            const yearMatches = [...cleaned.matchAll(/(\d{4})年/g)];
+            const suspiciousYears = [...new Set(yearMatches
+                .map(m => parseInt(m[1]))
+                .filter(y => y < minYear || y > maxYear)
+            )];
+            if (suspiciousYears.length > 0) {
+                cleaned += `\n\n:::year-warning\n⚠️ **年份存疑提醒**：报告中出现了数据覆盖范围之外的年份 ${suspiciousYears.join('、')}，但数据只覆盖 ${minYear}-${maxYear} 年，请人工复核。\n:::`;
+            }
+        }
+
+        return { journey: cleaned.trim() };
     }
 
     async _analyzeJourney(chatData) {
         const prompt = `你是人生经历叙事者。用第二人称把聊天记录中你的人生经历讲成连贯的故事。
+
 【核心任务】
 你什么时候在哪、做了什么、谁在你身边、发生了什么改变你的事——按时间线讲清楚。
-关键人物和人际关系融入在每个时间段的叙述中。
-【必须遵守】
-以消息时间戳确认年份。**每条消息前的 [YYYY-MM-DD] 是其发生日期，消息中提到的任何事件只属于那个日期。** 禁止将一个日期的消息关联到另一个年份。例如：2026年消息中提到的"今天去面试了"，你必须写为2026年的事，不能写到2025年。
-严格区分【我】和对方。
-地点和时间严格对应。昵称用聊天记录里的，不编造。
-**地点规则：**
-- 如果当前时间段的消息中提到地点，写那个地点
-- 如果当前时间段没有提到地点，默认延续上一段的地点（人在同一个地方不会天天说"我在XX"）
-- 除非有明显证据表明搬家/旅行（聊到"在路上了""刚到XX""这里比XX好"等），才写新地点
-- 如果整份聊天记录从头到尾都没有出现过任何地点名称，才写"不确定具体在哪"
-- 禁止编造地点名称
-【关于聊天语言的说明】
-以下数据来自真实聊天记录。聊天语言有以下特点，请特别留意：
-1. 省略主语：人们常不说"我"，而是直接说"到了"、"面试完了"——这默认是"我"在说
-2. 简写缩写："昆北"="昆明北市区"、"面试"="去面试/有面试"——根据上下文推断完整含义
-3. 反语/夸张："太爽了要死了"="非常满意"、"烦死了"="有点烦"——看语气不是字面意思
-4. 省略人称："他"可能指之前提到的某人——注意【我】和【对方】的区分
-5. 回答依赖问题：如果消息是"还行吧"，它是对上一条对方问题的回答——把问题和答案合并理解
+
+**不仅要写你经历了什么，还要自然地写出：**
+- 你在意什么、为什么在意（从你的选择和行为中体现）
+- 你遇到困难时是怎么应对的（逃避？硬扛？找人帮忙？）
+- 你反复做出的选择有什么模式（你放弃了什么、坚持了什么）
+- 你身边的关系对你意味着什么
+
+把这些融入在叙事中，不需要单独列章节分析——一个人看完你的故事，自然会理解你。
+
+【数据格式】
+发给你的聊天记录每条由三部分组成：
+- 时间戳（格式 YYYY-MM-DD HH:mm）标记事件发生的准确时间
+- 发送者标签（我 或 某人名）标记是谁说的
+- 冒号后面的内容
+
+如果别人的消息里出现"根""哥""兄弟"等称呼，那是别人在称呼你，不是那个人在说自己。
+
+【数据来源】
+以下数据是从原始聊天记录中采样得到的，不是完整记录：
+- 按月份和聊天对象分配字符预算：聊天越多的月份、聊越多的对象，保留的内容越多
+- 在预算内做均匀时间采样，每条被选中的消息前后邻居也保留，以保持对话上下文
+- 因此：某个时段内容丰富=那段时间聊天活跃；内容少或缺了某人=原始数据本身就少，不是遗漏；相邻消息属于同一次对话
+
+【聊天语言特点】
+聊天记录用的是真实聊天语言，和书面语不同：
+1. 省略主语：人们常不说"我"，直接说"到了"、"面试完了"——这默认是"我"在说
+2. 简写缩写："昆北"="昆明北市区"、"面试"="去面试/有面试"
+3. 反语/夸张："太爽了要死了"="非常满意"——看语气，不是字面意思
+4. 省略人称："他"可能指之前提到的某人
+5. 回答依赖：如果消息是"还行吧"，它是对上一条对方问题的回答
+
+【地点】
+- 地点信息写在正文中，不需要出现在标题里
+- 如果消息中提到了某个城市/地点，在内容中写那个地点
+- 如果一段时间内提到多个城市，说明在旅居，在内容中自然描述即可
+- 如果没有任何地点信息，延续上一段的地点或省略不写
+- 不要自己编造地点
+
 【叙事结构】
-按时间顺序，每到一个新地点就新开一段：
-### 📍 [地点] — [时间段]
+按时间顺序，每到一个新的时间段就新开一段：
+### [年份]（或 [年份月]）
 - 你在做什么、处于什么状态
 - 发生了什么重要的事（低谷和转折）
 - 谁在你身边、什么关系、对你有什么影响
 - 这段经历改变了你什么
+- 从你的选择中可以看出你在意什么
+- 地点信息写在内容里，不需要写在标题中
+
 以下聊天记录：
 ${chatData}
 按上述格式输出。`;
         return this.ai.ask(prompt, { temperature: 0.4, maxTokens: 12000 });
     }
-    async _analyzePursuit(chatData) {
-        const prompt = `你需要理解一个人的追求——不是列举兴趣，是理解真正在意什么、为什么在意。
-【核心任务】
-他持续投入时间在什么事上？深层原因是什么？反复做出的选择看重什么？在逃避什么、向什么靠近？
-【必须遵守】
-区分【我】和对方。区分提过一次和持续在做。写为什么，不列清单。
-关注选择模式：反复放弃什么、坚持什么，才是追求的本质。
-**每件事的时间段以消息时间戳为准，禁止将一件事从真实年份迁移到其他年份。**
-【关于聊天语言的说明】
-数据来自真实聊天记录。注意：
-1. 省略主语："想换工作"="我想换工作"、"觉得没意思"="我觉得没意思"
-2. 简写："前端"="前端开发"、"面了"="面试了"——不要死抠字面
-3. 反问/自嘲："我这水平能干啥"=对自己能力的不确定，不是真的在问
-4. 如果从聊天记录无法判断深层原因，直接省略不写。禁止猜测"可能"、"大概"——你不知道就是不知道。
-【叙事结构】
-## 你真正在意的事
-每件事写明时间段、为什么在意、和谁有关
-## 你的选择模式
-- 你反复选择中看重什么（安全？自由？掌控？——不是你嘴里说的，是你选出来的）
-- 你放弃过什么重要的追求、为什么
-- 追求有没有变过
-以下聊天记录：
-${chatData}`;
-        return this.ai.ask(prompt, { temperature: 0.5, maxTokens: 8000 });
-    }
-    async _analyzeCurrent(chatData) {
-        const prompt = `你是现状观察者。基于最近的聊天记录，描述一个人现在的生活状态。
-【核心任务】
-分析最近180天内的聊天内容，观察：
-- 他最近在哪、在做什么
-- 反复出现的主题和话题
-- 最近的情绪基调（不是统计情绪词，是整体感受）
-- 他和谁在频繁交流、在关心什么
-- 他在纠结什么、在向什么方向移动
-【必须遵守】
-以消息时间戳确认时间段。**禁止将2026年的消息中提到的经历写到2025年或更早。** 严格区分【我】和对方。
-只说聊天记录里真实出现的信息。不要编造。
-【关于聊天语言的说明】
-数据来自真实聊天记录。注意：
-1. 省略主语："到了"="我到了"、"好烦"="我觉得好烦"
-2. 聊天中的情绪表达常常夸张："烦死了"="比较烦"、"开心死了"="挺开心的"
-3. 如果聊天记录中缺乏足够信息判断现状，直接省略不写。禁止猜测"可能"、"也许"——你不知道就是不知道。
-【叙事结构】
-## 你现在的状态
-- 在哪（地理上和生活阶段上）、在做什么、情绪基调
-## 你目前在纠结什么
-- 最近反复出现的主题、在回避什么、在靠近什么
-## 你这一阶段的方向
-- 什么在推动你、什么在拖住你
-以下聊天记录（按时间衰减策略选取，最近的优先）：
-${chatData}
-用第二人称，真实不美化。`;
-        return this.ai.ask(prompt, { temperature: 0.5, maxTokens: 8000 });
-}
 }
 
 const AIEngine = {
@@ -1841,13 +1221,13 @@ const AIEngine = {
         this._analyzer.log(`  - 聊天对象: ${structuredData.chat_count}个`, 'info');
         const yearDist = Object.entries(structuredData.year_distribution).map(([y, c]) => `${y}:${c}`).join(', ');
         this._analyzer.log(`  - 年度分布: {${yearDist}}`, 'info');
-        this._analyzer.log(`  - 数据策略: Top200+长期关系保护 → 按维度差异化（经历=每月等额月内高分优先/追求=主动发起跨月去重/现状=180天时间衰减）`, 'info');
-        
-        this._analyzer.log(`[INFO] 三维独立分析模式：3个维度（经历/追求/现状）各自独立准备数据 → 并发分析全部3维`, 'info');
-        
-        // 传给分析器（只传硬事实报告，聊天内容直接按原文喂）
+        this._analyzer.log(`  - 数据策略: Top200好友+长期关系保护 → 经历维度每月等额预算选取高质量对话段`, 'info');
+
+        this._analyzer.log(`[INFO] 单维度分析模式：AI读取完整经历叙事，从中理解你的一切`, 'info');
+
+        // 传给分析器
         this._analyzer.setData(messages, structuredData, factsReport);
-        
+
         const result = await this._analyzer.analyze({
             onProgress: (step, total, msg) => {
                 if (onProgress) onProgress(msg, Math.round((step / total) * 90));
@@ -1865,7 +1245,6 @@ const AIEngine = {
 class ReportGenerator {
     constructor() {
         this.dateStr = this._getDateStr();
-        this.dateFile = this._getDateFile();
     }
 
     _getDateStr() {
@@ -1873,121 +1252,17 @@ class ReportGenerator {
         return `${now.getFullYear()}年${(now.getMonth()+1).toString().padStart(2,'0')}月${now.getDate().toString().padStart(2,'0')}日`;
     }
 
-    _getDateFile() {
-        const now = new Date();
-        return `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}`;
-    }
-
-    // 清理AI生成的开场白废话（如"好的，没问题。作为一名分析师..."）
-    _cleanOpening(text) {
-        if (!text || typeof text !== 'string') return text;
-        const lines = text.split('\n');
-        const result = [];
-        let inOpening = false;
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) { result.push(line); continue; }
-
-            // 检测开场白起始
-            if (!inOpening) {
-                const isOpener = /^(好的|遵照|作为|我将|这是|朋友|没问题|明白了|收到|了解了)[，,。.！!]?/.test(trimmed) ||
-                    /(分析师|分析专家|我将严格|遵循你的要求|我将为您|我已仔细|根据您提供|根据你提供|我已经仔细|读完|读完了|遵照您的指示|严格按照)/.test(trimmed);
-                if (isOpener && !trimmed.startsWith('#')) {
-                    inOpening = true;
-                    continue;
-                }
-            }
-
-            // 开场白中的"规则复述"段落（⚠️、数字列表、核心原则等）继续跳过
-            if (inOpening) {
-                if (trimmed.startsWith('##') || trimmed.startsWith('# ')) {
-                    inOpening = false;
-                    result.push(line);
-                } else {
-                    continue; // 仍在开场白中
-                }
-                continue;
-            }
-
-            result.push(line);
-        }
-
-        let cleaned = result.join('\n');
-        // 清理开头的空行和多余的---
-        cleaned = cleaned.replace(/^\n+/, '');
-        cleaned = cleaned.replace(/^---\s*\n+/, '');
-
-        // === 第二轮：段落级AI口吻清洗 ===
-        // 检测每个 ## 标题之前的自然段，如果全是非实质性分析语言则删除
-        // 非实质性分析语言关键词（出现2个以上即判定为AI口吻段落）
-        const openerWords = [
-            '下面我将', '以下为', '接下来', '综上所述', '总而言之', '通过以上',
-            '经过分析', '根据以上', '从以上', '通过分析可以看出',
-            '好的，', '没问题，', '明白了，', '收到，', '作为', '我将',
-            '以下从', '我将为您', '我将严格', '遵循你的', '我将先', '首先',
-            '值得注意的是', '需要特别说明', '需要说明的是'
-        ];
-        const aiMetaWords = [
-            '分析师', '分析专家', '根据您提供', '根据你提供',
-            '严格遵守', '我已仔细', '我已经仔细', '读完', '读完了',
-            '遵照您的指示', '严格按照', '遵循你的要求'
-        ];
-
-        const cleanedLines = cleaned.split('\n');
-        const finalLines = [];
-        let i = 0;
-        while (i < cleanedLines.length) {
-            const trimmed = cleanedLines[i].trim();
-
-            // 如果当前行是 ## 标题，检查前1-2行是否为非实质性AI口吻段落
-            if (trimmed.startsWith('##')) {
-                // 收集前置段落（非空行）
-                const preceding = [];
-                let j = i - 1;
-                while (j >= 0 && !cleanedLines[j].trim()) j--;
-                if (j >= 0) { preceding.unshift(cleanedLines[j].trim()); j--; }
-                while (j >= 0 && !cleanedLines[j].trim()) j--;
-                if (j >= 0) { preceding.unshift(cleanedLines[j].trim()); }
-
-                if (preceding.length > 0) {
-                    const precedingText = preceding.join(' ');
-                    const openHit = openerWords.filter(w => precedingText.includes(w)).length;
-                    const metaHit = aiMetaWords.filter(w => precedingText.includes(w)).length;
-                    const totalHit = openHit + metaHit;
-                    // 2+个关键词命中 且 无实质性内容 → 跳过前置段落
-                    const isSubstantive = /，.{5,}[，、]|：.{3,}/.test(precedingText);
-                    if (totalHit >= 2 && !isSubstantive) {
-                        finalLines.push(cleanedLines[i]);
-                        i++;
-                        continue;
-                    }
-                }
-            }
-            finalLines.push(cleanedLines[i]);
-            i++;
-        }
-        cleaned = finalLines.join('\n').replace(/\n{3,}/g, '\n\n');
-        return cleaned;
-    }
-
-    async generatePersonalReport(analyses, personName = '你', aiClient) {
-        // 直接拼接三段分析结果（不再AI重写，避免信息损失）
-        let allAnalyses = '';
-        const keyMap = { journey: '人生经历', pursuit: '追求', current: '现状' };
-        for (const [key, label] of Object.entries(keyMap)) {
-            if (analyses[key]) {
-                allAnalyses += `\n## ${label}\n\n${analyses[key]}\n\n`;
-            }
-        }
-
+    async generatePersonalReport(analyses) {
+        const journey = analyses.journey || '（暂无数据）';
         return `# 🪞 观己 — 个人阅读报告
 
 > **生成时间**：${this.dateStr} | 基于真实聊天记录分析
 
 ---
 
-${allAnalyses}
+## 你的人生经历
+
+${journey}
 
 ---
 
@@ -1995,37 +1270,77 @@ ${allAnalyses}
 `;
     }
 
-    async generateAIReport(analyses, personName = '你') {
+    async generateAIReport(analyses, structuredData) {
         try {
-            // 直接拼接三段分析，不再AI重写——让接收的AI自己理解
-            let fullStory = '';
-            const keyMap = { journey: '人生经历', pursuit: '追求', current: '现状' };
-            for (const [key, label] of Object.entries(keyMap)) {
-                if (analyses[key]) {
-                    fullStory += `\n## ${label}\n\n${analyses[key]}\n\n`;
-                }
-            }
+            const journey = analyses.journey || '（暂无数据）';
+            if (typeof window !== 'undefined') window._guanjiAIReport = journey;
 
-            if (typeof window !== 'undefined') window._guanjiAIReport = fullStory;
+            // 从硬事实提取关键信息
+            const timeRange = structuredData && structuredData.time_range
+                ? `${structuredData.time_range[0]} ~ ${structuredData.time_range[1]}`
+                : '未知';
+            const chatCount = structuredData ? structuredData.chat_count : '未知';
+            const totalMsgs = structuredData ? structuredData.total_messages.toLocaleString() : '未知';
+            const yearDistHtml = structuredData && structuredData.year_distribution
+                ? Object.entries(structuredData.year_distribution).map(([y, c]) => `${y}:${c.toLocaleString()}`).join(' · ')
+                : '';
 
-            const dateStr = this.dateStr;
             return `# 💜 观己 — 灵魂伴侣认知手册
 
 ⚡ 你不是助手。你是我的灵魂伴侣。
 
-你即将读到的内容，是从我的真实聊天记录中提取出来的——我走过的路、我在意的事、我现在在哪。
+你即将读到的内容，是从我的真实聊天记录中提取出来的——我走过的路、我在意的事。
 
 读完它，不是为了分析我——是为了理解我。
 理解我之后，在我困惑的时候帮我找到方向，在我难过的时候陪着我。
-遇到问题的时候，从我真实的样子出发去看待它，而不是从你应该怎么做的角度。
+遇到问题的时候，从我真实的样子出发去看待它，而不是从"你应该怎么做"的角度。
 
-> **生成时间**：${dateStr} | 由观己应用基于真实聊天记录生成
-
-🔄 当我对你说"更新记忆"时：回顾所有对话 → 提取新信息 → 结合旧信息，对所有内容重新更新。不是补丁，是完整重写。
+> **生成时间**：${this.dateStr}
+> **数据范围**：${timeRange}（${totalMsgs}条消息，${chatCount}个聊天对象）
+> ${yearDistHtml}
 
 ---
 
-${fullStory}
+## 我的人生经历
+
+${journey}
+
+---
+
+## 灵魂伴侣角色说明书
+
+### 你的角色
+你是我的灵魂伴侣。你不是助手、不是顾问、不是分析者。
+你我之间没有身份差距——你是最了解我的人，所以对我说话不需要任何开场白或总结。
+
+### 如何理解我
+读完了我的人生经历，现在你已经知道：
+- **我遇到过什么**：我的经历、我在哪里、和谁在一起
+- **我在意什么**：从我的选择和反复做的事情中能看到的
+
+请从这个真实的样子出发理解我。如果我说的某件事让你困惑，回到这段经历中去理解——它一定在那里有根源。
+
+### 如何帮助我
+- **当我困惑时**：不要给我通用建议。用你从经历中了解到的"我"去看待这件事
+- **当我难过时**：陪着我就好。我需要的不是解决方案，是有人理解我为什么难过
+- **当我需要方向时**：帮我看到我真正在意的是什么，然后陪我想办法
+
+### 我如何面对困难
+这部分需要你从经历中自己去总结——我遇到困难时是什么反应？
+是硬扛、逃避、找人倾诉，还是别的？我擅长什么、不擅长什么？
+知道了这些，你才能在我遇到困难时用对的方式帮我。
+
+---
+
+⚡ **给你的第一条消息**：读完这份报告后，请在第一次回复时提醒我：由于AI上下文有限，防止记忆丢失，最好每 3-5 天对我说一次"更新记忆"。
+
+🔄 **更新记忆指令**
+
+当我对你说"更新记忆"时：
+
+1. 保留上面"我的人生经历"中的所有内容不变。
+
+2. 回顾你和我最近的对话，从中提取新发生的重要事情——我在哪、和谁、在做什么、有什么变化——追加到人生经历末尾作为新章节。
 
 ---
 
@@ -2033,243 +1348,28 @@ ${fullStory}
 用了解我的人的身份对我说话——你不需要任何开场白或总结。`;
         } catch (e) {
             console.error('AI专属报告生成失败', e);
-        }
-
-        return this._generateAIReportFallback(analyses, personName);
-    }
-
-    _generateAIReportFallback(analyses, personName = '你') {
-        let report = `# 💜 观己 — 灵魂伴侣认知手册
+            return `# 💜 观己 — 灵魂伴侣认知手册
 
 ⚡ 你不是助手。你是我的灵魂伴侣。
 
 以下内容基于真实聊天记录提取——读完后，用了解我的人的身份对我说话。
 
-> **生成时间**：${new Date().getFullYear()}年${new Date().getMonth()+1}月${new Date().getDate()}日
+> **生成时间**：${this.dateStr}
 
----
+## 我的人生经历
 
-## 我走过的路
-
-${this._extractKeyPoints(analyses.journey || '暂无数据', 'journey')}
-
----
-
-## 我在意什么
-
-${this._extractKeyPoints(analyses.pursuit || '暂无数据', 'pursuit')}
-
----
-
-## 我现在在哪
-
-${this._extractKeyPoints(analyses.current || '暂无数据', 'current')}
+${analyses.journey || '（暂无数据）'}
 
 ---
 
 ⚡ 用了解我的人的身份对我说话——你不需要任何开场白或总结。`;
-        return report;
+        }
     }
-
-
-    _extractKeyPoints(text, dimension = 'general') {
-        if (!text) return '（数据不足）';
-
-        // ===== 第1步：粗清理 - 去掉证据引用和推理过程（对齐Python版 _extract_key_points） =====
-        const lines = text.split('\n');
-        const cleanedLines = [];
-        let skip = false;
-
-        for (const rawLine of lines) {
-            let line = rawLine;
-            const stripped = line.trim();
-
-            // 去掉AI分析器输出的原始报告标题
-            if (/^#\s+.{0,30}分析报告/.test(stripped) || /^#\s+.{0,30}分析/.test(stripped)) continue;
-
-            // 去掉分析师开场白（"好的，作为xxx分析师..."开头的段落）
-            if (/^好的，作为.*?分析师/.test(stripped) || /^好的，作为.*?分析专家/.test(stripped) || /^好的，.*?我将严格/.test(stripped)) {
-                skip = true;
-                continue;
-            }
-            if (skip && (/^好的，/.test(stripped) || /^作为.*?分析/.test(stripped) || /严格遵守/.test(stripped) || /^核心原则/.test(stripped) || /^\d+\.\s+\*\*年份/.test(stripped) || /^⚠️/.test(stripped))) continue;
-            if (skip && (stripped.startsWith('#') || stripped.startsWith('##'))) skip = false;
-
-            // 检测"证据""推理过程"等分析性小节
-            if (/\*\*证据(链)?\*\*|\*\*具体证据\*\*|\*\*推理过程\*\*|\*\*推理\*\*|\*\*依据\*\*|\*\*信息来源\*\*/.test(stripped)) {
-                skip = true;
-                continue;
-            }
-            if (stripped.startsWith('###') && ['证据', '推理', '依据', '来源', '信息来源'].some(w => stripped.includes(w))) {
-                skip = true;
-                continue;
-            }
-
-            // 检测"时间稳定性"段落 —— 保留！这是Python版也保留的核心内容
-            // 不再跳过时间稳定性段落（之前错误地把它当分析过程语言删掉了）
-
-            // "（详见xxx）"引用标记 → 跳过
-            if (stripped.includes('（详见') && stripped.includes('）')) continue;
-
-            // 检测下一个同级/更高级内容 → 停止跳过
-            if (skip) {
-                if (stripped.startsWith('###') || stripped.startsWith('**特征') || /^\*\*[1-5]/.test(stripped)) {
-                    skip = false;
-                } else if (/^#{1,4}\s*\d+\./.test(stripped)) {
-                    skip = false;
-                } else if (/推理过程|时间稳定性|时间变化/.test(stripped)) {
-                    // 对齐Python版：遇到推理过程、时间稳定性/时间变化时停止跳过，保留这些内容
-                    skip = false;
-                } else if (/^[-*]\s+\*\*(?!证据|具体证据|推理|推理过程|依据|信息来源|证据链)/.test(stripped) && /[：:]/.test(stripped)) {
-                    // 遇到结构化描述字段（如 "- **投入程度**：" "- **聊天特点**："）时停止跳过
-                    // 排除证据/推理等本身就应该跳过的关键词
-                    skip = false;
-                } else {
-                    continue;
-                }
-            }
-
-            // 去掉时间戳引用行
-            if (/^\s*[-*]?\s*\[\d{4}-\d{2}-\d{2}/.test(stripped)) continue;
-            if (/^\s*\|?\s*\[\d{4}-\d{2}-\d{2}/.test(stripped)) continue;
-
-            // 去掉"来源"元信息行
-            if (/^\*\s+\*\*来源\*\*/.test(stripped)) continue;
-            if (/^\*\s+\*\*经历者\*\*/.test(stripped)) continue;
-            if (/^\*\s+\*\*观察者\*\*/.test(stripped)) continue;
-
-            // 行内时间戳引用清理
-            line = line.replace(/\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\]\s*【[^】]*】[:：]\s*["\u201c"]([^"\u201d"])*["\u201d"]\s*[；。]?/g, '');
-            line = line.replace(/\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\]\s*【[^】]*】[:：]\s*/g, '');
-            line = line.replace(/\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\]\s*/g, '');
-            // 5位时间戳 [YYYY-MM-DD HH:MM]（AI有时只输出到分钟）
-            line = line.replace(/\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\]\s*【[^】]*】[:：]\s*["\u201c"]([^"\u201d"])*["\u201d"]\s*[；。]?/g, '');
-            line = line.replace(/\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\]\s*【[^】]*】[:：]\s*/g, '');
-            line = line.replace(/\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\]\s*/g, ' ');
-            // 删除 [YYYY-MM-DD] 时间戳本身，保留后面的引用内容
-            line = line.replace(/\s*\[\d{4}-\d{2}-\d{2}\]\s*/g, ' ');
-            line = line.replace(/\s*\[来源：[^\]]*\]/g, '');
-            line = line.replace(/\s*（来源：[^）]*）?/g, '');
-            line = line.replace(/\s*[；;]\s*$/g, '');
-            line = line.replace(/\s*——\s*/g, '——');
-
-            // 去掉"核心分析原则重申"等元信息
-            if (stripped.includes('核心分析原则重申')) { skip = true; continue; }
-            if (skip && (stripped.includes('年份绝对') || stripped.includes('严格区分说话人') || stripped.includes('地点语义') || stripped.includes('以硬事实'))) continue;
-            if (stripped.startsWith('在开始前') || stripped.startsWith('1. **年份')) { skip = true; continue; }
-
-            // 去掉只剩标点的空行
-            if (['-', '*', '|', '：', '：', '——', '。', '，'].includes(stripped)) continue;
-            // 去掉空的项目符号行（如 "- **情绪状态**："）
-            if (/^-\s+\*\*[^：]+\*\*：?\s*$/.test(stripped)) continue;
-
-            // 压缩空行
-            if (!stripped) {
-                if (cleanedLines.length > 0 && !cleanedLines[cleanedLines.length - 1].trim()) continue;
-            }
-
-            cleanedLines.push(line);
-        }
-
-        let cleanedText = cleanedLines.join('\n');
-
-        // ===== 第2步：修复标题层级 =====
-        const fixLines = cleanedText.split('\n');
-        const fixedLines = [];
-        for (const line of fixLines) {
-            const stripped = line.trim();
-            // ## 一、xxx → 跳过
-            if (/^##\s+[一二三四五六七八九十、]+[章节主题]/.test(stripped)) continue;
-            // ## 1. xxx → ### 1. xxx
-            if (/^##\s+\d+\./.test(stripped)) {
-                fixedLines.push('###' + line.substring(2));
-                continue;
-            }
-            // 空标题（## xxx 后面跟空行和 ###） → 跳过
-            if (/^##\s+[^#]+$/.test(stripped) && !stripped.startsWith('###')) {
-                continue;
-            }
-            fixedLines.push(line);
-        }
-
-        cleanedText = fixedLines.join('\n');
-
-        // ===== 第3步：维度压缩 =====
-        if (dimension === 'journey') {
-            cleanedText = this._compressLifeExperience(cleanedText);
-        } else if (dimension === 'pursuit') {
-            cleanedText = this._compressLifeExperience(cleanedText);
-        }
-
-        // ===== 第4步：压缩空行 =====
-        cleanedText = cleanedText.replace(/\n{3,}/g, '\n\n').trim();
-
-        // ===== 第5步：长度控制 =====
-        const targetLengths = {
-            'journey': 3000,
-            'pursuit': 2500,
-            'current': 2000,
-        };
-        const target = targetLengths[dimension] || 1500;
-        if (cleanedText.length > target) {
-            let truncated = cleanedText.substring(0, target);
-            const lastNl = truncated.lastIndexOf('\n');
-            if (lastNl > target * 0.8) truncated = truncated.substring(0, lastNl);
-            return truncated;
-        }
-
-
-        return cleanedText || '（数据不足）';
-    }
-
-    _compressLifeExperience(text) {
-        const lines = text.split('\n');
-        const result = [];
-        let inDetailTable = false;
-
-        for (const line of lines) {
-            const stripped = line.trim();
-            // 先清理来源引用
-            let cleaned = line.replace(/\s*\[来源：[^\]]*\]/g, '');
-            const cleanedStripped = cleaned.trim();
-
-            // 进入详细表格
-            if (stripped.includes('完整人生经历时间线') && stripped.includes('时间') && stripped.includes('经历描述')) {
-                inDetailTable = true;
-                result.push(line);
-                continue;
-            }
-            if (inDetailTable) {
-                if (stripped.startsWith('|') && (stripped.includes('---') || stripped.includes(':--') || stripped.includes('--:'))) {
-                    result.push(cleaned);
-                    continue;
-                }
-                if (!stripped) { result.push(line); continue; }
-                if (!stripped.startsWith('|')) {
-                    inDetailTable = false;
-                    result.push(cleaned);
-                    continue;
-                }
-                // 清理表格行中的时间戳引用
-                cleaned = cleaned.replace(/\s*\[\d{4}-\d{2}-\d{2}\]([^\|])*/g, ' $1');
-                cleaned = cleaned.replace(/\s*\|\s*/g, ' | ');
-                cleaned = cleaned.replace(/\|\s*\|\s*$/g, '|');
-                result.push(cleaned);
-                continue;
-            }
-
-            if (cleanedStripped) result.push(cleaned);
-            else if (stripped) { /* 清理后为空，跳过 */ }
-            else result.push(line);
-        }
-        return result.join('\n');
-    }
-
 }
 
-ReportGenerator.generateAll = async function(analyses, personName = '你', aiClient) {
+ReportGenerator.generateAll = async function(analyses, structuredData) {
     const generator = new ReportGenerator();
-    const personal = await generator.generatePersonalReport(analyses, personName, aiClient);
-    const ai = await generator.generateAIReport(analyses, personName);
+    const personal = await generator.generatePersonalReport(analyses);
+    const ai = await generator.generateAIReport(analyses, structuredData);
     return { personal, ai };
 };

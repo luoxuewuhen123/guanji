@@ -303,7 +303,7 @@ function renderCleanResult(stats, cleanerStats) {
 }
 
 // ==================== 好友保护列表 ====================
-// 计算哪些好友会被 prepareDataForDimension 丢弃（非Top200 且 跨度≤6个月 且 未强制保留）
+// 计算哪些好友会被 prepareJourneyData 丢弃（非Top200 且 跨度≤6个月 且 未强制保留）
 function _classifyFriends() {
     const SIX_MONTH_MS = 180 * 24 * 3600 * 1000;
     const TOP_FRIEND_COUNT = 200;
@@ -466,7 +466,6 @@ function openPreviewWindow() {
     let wechatCount = 0, qqCount = 0;
     let myCount = 0, otherCount = 0;
     const yearCounts = {};
-    const monthCounts = {};
     
     for (const m of msgs) {
         // 来源统计
@@ -482,8 +481,6 @@ function openPreviewWindow() {
         if (mDate && !isNaN(mDate.getTime())) {
             const year = String(mDate.getFullYear());
             yearCounts[year] = (yearCounts[year] || 0) + 1;
-            const month = year + '-' + String(mDate.getMonth()+1).padStart(2, '0');
-            monthCounts[month] = (monthCounts[month] || 0) + 1;
         }
     }
     
@@ -899,10 +896,9 @@ async function startAnalysis() {
     // 文案轮播：当AI思考时显示有趣的进度文字
     const progressRotatingTexts = [
         '正在梳理你的人生经历...',
-        '正在理解你在意什么...',
-        '正在感知你的现状...',
-        '正在连接过去的你和现在的你...',
+        '正在将你的聊天记录串成故事...',
         'AI正在深度思考中...',
+        '正在连接过去的你和现在的你...',
     ];
     let rotatingIndex = 0;
     let rotatingTimer = null;
@@ -945,10 +941,8 @@ async function startAnalysis() {
         // 生成报告
         addLog('正在生成报告...', 'info');
         updateProgress(95, '生成报告中...');
-        
-        // 传入aiClient以便个人阅读报告能做AI精炼
-        const aiClient = AIEngine.getClient ? AIEngine.getClient() : null;
-        reports = await ReportGenerator.generateAll(result, '你', aiClient);
+
+        reports = await ReportGenerator.generateAll(result, lastStructuredData);
         
         addLog('[DONE] 分析完成！', 'success');
         updateProgress(100, '完成！');
