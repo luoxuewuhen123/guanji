@@ -22,6 +22,17 @@
         <h1>🎴 命运塔罗</h1>
         <p class="subtitle">探索命运的轨迹，解读人生的密码</p>
 
+        <!-- 导入个人阅读报告 -->
+        <div class="card" style="padding:15px 20px;text-align:center;">
+            <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
+                <span id="reportStatus" style="font-size:0.85em;color:#7f8c8d;">📖 可导入观己个人阅读报告，让AI结合你的经历占卜</span>
+                <input type="file" id="reportFileInput" accept=".md" style="display:none;" onchange="importReportFile(event)">
+                <button onclick="document.getElementById('reportFileInput').click()" style="padding:6px 16px;background:rgba(108,92,231,0.2);border:1px solid rgba(108,92,231,0.4);border-radius:8px;color:#a78bfa;cursor:pointer;font-size:0.8em;">📂 导入报告</button>
+                <button id="clearReportBtn" onclick="clearReport()" style="display:none;padding:6px 16px;background:rgba(231,76,60,0.15);border:1px solid rgba(231,76,60,0.3);border-radius:8px;color:#e74c3c;cursor:pointer;font-size:0.8em;">✕ 清除</button>
+                <a href="../app.html" target="_blank" style="font-size:0.75em;color:#7f8c8d;text-decoration:none;">🔗 前往观己生成报告</a>
+            </div>
+        </div>
+
         <div class="step">
             <div class="step-item active" id="step1">1. 命运画像</div>
             <div class="step-item" id="step2">2. 提出问题</div>
@@ -43,24 +54,6 @@
             </div>
 
             <div class="question">
-                <div class="question-title">你现在的注意力更多在？</div>
-                <div class="options" data-question="direction">
-                    <div class="option" data-value="inward">自己内心，思考人生意义</div>
-                    <div class="option" data-value="outward">外部世界，追求目标</div>
-                    <div class="option" data-value="balance">两者都有，来回摆动</div>
-                </div>
-            </div>
-
-            <div class="question">
-                <div class="question-title">你觉得你的人生？</div>
-                <div class="options" data-question="relation">
-                    <div class="option" data-value="entangled">被他人和环境影响很大</div>
-                    <div class="option" data-value="independent">主要由自己掌控</div>
-                    <div class="option" data-value="uncertain">不确定，有时候这样有时候那样</div>
-                </div>
-            </div>
-
-            <div class="question">
                 <div class="question-title">你感觉自己正处于人生的哪个阶段？</div>
                 <div class="options" data-question="timing">
                     <div class="option" data-value="rising">上升期 - 感觉在成长，机会在出现，能量充沛</div>
@@ -77,11 +70,6 @@
                     <div class="option" data-value="partial">有些迷茫，但隐约感觉到什么</div>
                     <div class="option" data-value="unclear">完全看不清，不知道自己在干嘛</div>
                 </div>
-            </div>
-
-            <div class="question" style="opacity:0.85;">
-                <div class="question-title">💭 当前最困扰的事<span style="font-size:0.75em;color:#bdc3c7;">（选填，50字以内，帮助AI更精准解读）</span></div>
-                <textarea id="openConcern" maxlength="50" placeholder="例如：害怕失去工作 / 担心感情出问题 / 不知道该不该考研" style="width:100%;min-height:60px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#ecf0f1;padding:10px;font-size:14px;resize:none;"></textarea>
             </div>
 
             <div class="buttons">
@@ -106,10 +94,6 @@
             <div class="buttons">
                 <button class="btn btn-secondary" id="backToQuestionnaire">← 重新评估</button>
                 <button class="btn" id="startReading">开始抽牌占卜 🎴</button>
-            </div>
-            <div style="text-align:center;margin-top:10px;display:flex;gap:8px;justify-content:center;">
-                <button onclick="exportProfile()" style="background:none;border:1px solid rgba(255,255,255,0.15);color:#7f8c8d;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:0.75em;">💾 导出存档</button>
-                <button onclick="importProfile()" style="background:none;border:1px solid rgba(255,255,255,0.15);color:#7f8c8d;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:0.75em;">📂 导入存档</button>
             </div>
         </div>
 

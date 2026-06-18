@@ -258,13 +258,6 @@
             color: #f39c12;
             margin-bottom: 10px;
         }
-        .time-range, .probability, .answer {
-            font-size: 1.5em;
-            font-weight: bold;
-            color: #2ecc71;
-        }
-        .answer.no { color: #e74c3c; }
-        .answer.yes { color: #2ecc71; }
         .hidden { display: none !important; }
 
         /* Dynamic atmosphere overlay */
