@@ -454,9 +454,11 @@ if ('serviceWorker' in navigator) {
         <span class="icon">🔮</span> 观己
     </a>
     <div class="nav-links">
-        <a href="#features">功能特性</a>
+        <a href="#features">核心特性</a>
         <a href="#tarot">命运塔罗</a>
         <a href="#steps">使用流程</a>
+        <a href="#reports">报告说明</a>
+        <a href="#combine">联动使用</a>
         <a href="#download">下载工具</a>
         <a href="#privacy">隐私保护</a>
         <a href="#support">技术支持</a>
@@ -469,7 +471,7 @@ if ('serviceWorker' in navigator) {
     <section class="hero">
         <div class="hero-badge">🔒 数据全部本地处理，绝不上传</div>
         <h1>用聊天记录<br>重新认识自己</h1>
-        <p>导入微信或QQ聊天记录，AI帮你梳理人生经历、人际关系、性格演变，生成专属AI报告，导入AI让AI成为你的知己——所有数据只在你自己的浏览器里处理</p>
+        <p>导入微信或QQ聊天记录，AI帮你梳理人生经历，生成专属的灵魂伴侣认知手册。导入任何AI平台，AI就成为真正了解你的知己——所有数据只在你自己的浏览器里处理</p>
         <div class="hero-buttons">
             <a href="app.html" class="btn btn-primary">🔮 开始分析</a>
             <a href="tarot/index.html" class="btn btn-secondary">🃏 命运塔罗</a>
@@ -480,37 +482,37 @@ if ('serviceWorker' in navigator) {
     <!-- 特性 -->
     <section class="features" id="features">
         <h2 class="section-title">核心特性</h2>
-        <p class="section-sub">从海量聊天记录中，提炼出关于你的真实画像</p>
+        <p class="section-sub">从海量聊天记录中，提炼出关于你的真实故事</p>
         <div class="feature-grid">
             <div class="feature-card">
-                <div class="feature-icon">🕐</div>
-                <h3>人生时间线</h3>
-                <p>按时间梳理你经历过什么、在哪里、做什么——像翻阅一本关于自己的书</p>
+                <div class="feature-icon">🛤️</div>
+                <h3>人生经历叙事</h3>
+                <p>AI按时间线讲述你的人生故事——你在哪、和谁、经历了什么、怎么应对的。读完故事，AI自然理解你在意什么</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">🤝</div>
-                <h3>人际关系图谱</h3>
-                <p>你身边有哪些人、什么时候认识的、关系如何——看清你最在乎谁</p>
+                <h3>人际关系洞察</h3>
+                <p>从聊天数据中自然呈现你与每个人的关系脉络——谁陪你走过低谷、谁是你倾诉的对象</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">🧠</div>
-                <h3>性格与价值观</h3>
-                <p>从经历、关系、兴趣中推导你的性格特质——不是标签，是演变</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🎯</div>
-                <h3>兴趣与驱动力</h3>
-                <p>不同阶段你在追求什么、什么在驱动你——看见自己的成长轨迹</p>
+                <h3>应对模式识别</h3>
+                <p>遇到困难时你是硬扛、逃避还是找人倾诉？AI从经历中总结你的行为模式，让知己更懂如何帮你</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">🤖</div>
-                <h3>AI专属报告</h3>
-                <p>一份"让AI像朋友一样了解你"的信件——带走它，让任何AI更懂你</p>
+                <h3>灵魂伴侣认知手册</h3>
+                <p>一份包含你的人生经历 + 角色说明书的专属报告。导入任何AI平台，AI就化身真正了解你的灵魂伴侣</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔄</div>
+                <h3>记忆更新机制</h3>
+                <p>对AI说"更新记忆"，AI就会回顾新对话，将新经历追加到认知手册末尾——记忆永不丢失，永远追加</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">⚡</div>
                 <h3>纯前端运行</h3>
-                <p>文件读取→数据清洗→AI分析→报告生成，全在浏览器本地完成</p>
+                <p>文件读取→数据清洗→AI分析→报告生成，全在浏览器本地完成，没有任何数据上传</p>
             </div>
         </div>
     </section>
@@ -518,30 +520,33 @@ if ('serviceWorker' in navigator) {
     <!-- 命运塔罗 -->
     <section class="tarot-section" id="tarot">
         <h2 class="section-title">🃏 命运塔罗</h2>
-        <p class="section-sub">不是迷信，是另一种认识自己的方式</p>
+        <p class="section-sub">命运画像 + 塔罗牌随机性 + 人生经历，AI为你占卜</p>
         <div class="tarot-card">
             <div class="tarot-inner">
                 <div class="tarot-left">
                     <div class="tarot-icon">🃏</div>
-                    <h3>三牌阵 + 命运画像 + 哲学解读</h3>
-                    <p>抽三张塔罗牌，系统自动生成你的命运画像（能量/方向/关系/时机/觉知五维度），前端精确计算时间、概率、判断等量化结果，AI结合哲学思想深度解读——不只是告诉你"会还是不会"，更要让你明白"为什么"。</p>
+                    <h3>三牌阵 + 命运画像 + 人生经历</h3>
+                    <p>通过3个问题了解你当下的状态（能量/阶段/觉知），从22张大阿尔卡那中随机抽取3张（每张50%概率逆位），AI结合你的真实状态和随机牌面进行占卜解读。还可导入观己生成的人生经历报告，让占卜更贴合你的实际人生。</p>
                     <div class="tarot-features">
-                        <span class="tarot-tag">⏰ 时间预测</span>
-                        <span class="tarot-tag">📊 概率计算</span>
-                        <span class="tarot-tag">⚖️ 是非判断</span>
-                        <span class="tarot-tag">🧭 方向指引</span>
                         <span class="tarot-tag">🔮 命运画像</span>
-                        <span class="tarot-tag">📖 哲学解读</span>
+                        <span class="tarot-tag">🃏 正/逆位</span>
+                        <span class="tarot-tag">📖 AI自由解读</span>
+                        <span class="tarot-tag">📂 导入人生经历</span>
+                        <span class="tarot-tag">🎴 3D翻牌动画</span>
+                        <span class="tarot-tag">🧘 冥想引导</span>
                     </div>
                     <a href="tarot/index.html" class="btn btn-primary" style="margin-top:20px">🃏 开始占卜</a>
                 </div>
                 <div class="tarot-right">
                     <div class="tarot-example">
                         <div class="tarot-example-title">你可以问：</div>
-                        <div class="tarot-example-item">❓ 我的股票会涨吗 → <strong>会 / 不会 + 65%</strong></div>
-                        <div class="tarot-example-item">❓ 什么时候能买房 → <strong>2027-2028年</strong></div>
-                        <div class="tarot-example-item">❓ 该不该换工作 → <strong>倾向是 + 低风险</strong></div>
-                        <div class="tarot-example-item">❓ 我的人生方向在哪 → <strong>方向正确，继续前进</strong></div>
+                        <div class="tarot-example-item">❓ 我的事业什么时候会有转机</div>
+                        <div class="tarot-example-item">❓ 该不该接受这个offer</div>
+                        <div class="tarot-example-item">❓ 我和TA的关系会怎么发展</div>
+                        <div class="tarot-example-item">❓ 我的人生方向是什么</div>
+                        <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.06);font-size:12px;color:#7f8c8d;">
+                            💡 可先通过观己生成人生经历报告，导入后AI占卜更精准
+                        </div>
                     </div>
                 </div>
             </div>
@@ -550,8 +555,8 @@ if ('serviceWorker' in navigator) {
 
     <!-- 使用流程 -->
     <section class="steps-section" id="steps">
-        <h2 class="section-title">三步完成</h2>
-        <p class="section-sub">从导出到分析，简单三步</p>
+        <h2 class="section-title">四步完成</h2>
+        <p class="section-sub">从导出到让AI成为你的知己</p>
         <div class="steps-grid">
             <div class="step-card">
                 <div class="step-num">1</div>
@@ -562,13 +567,69 @@ if ('serviceWorker' in navigator) {
             <div class="step-card">
                 <div class="step-num">2</div>
                 <h3>上传并分析</h3>
-                <p>选择TXT文件，配置AI模型，点击开始分析——数据全在本地处理</p>
+                <p>选择TXT文件，配置AI模型，点击开始分析——数据全在本地处理，AI生成你的人生经历叙事</p>
             </div>
             <div class="step-arrow">→</div>
             <div class="step-card">
                 <div class="step-num">3</div>
-                <h3>下载三份报告</h3>
-                <p>分析过程报告 / 个人阅读报告 / AI专属报告，全面认识自己</p>
+                <h3>下载两份报告</h3>
+                <p>个人阅读报告（可读版）+ AI专属灵魂伴侣认知手册（含经历+角色说明书+更新记忆指令）</p>
+            </div>
+            <div class="step-arrow">→</div>
+            <div class="step-card">
+                <div class="step-num">4</div>
+                <h3>导入AI平台</h3>
+                <p>将AI专属报告导入豆包、DeepSeek等AI平台，AI就成为真正了解你的灵魂伴侣</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 报告类型 -->
+    <section class="download-section" id="reports">
+        <h2 class="section-title">两份报告</h2>
+        <p class="section-sub">一份给自己读，一份给AI读</p>
+        <div class="download-grid">
+            <div class="download-card">
+                <div class="download-icon">📖</div>
+                <h3>个人阅读报告</h3>
+                <p>AI为你讲述的人生经历叙事——你在哪、和谁、经历了什么、怎么应对的。给自己看，重新认识自己</p>
+                <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px;">
+                    <span style="padding:4px 10px;background:rgba(108,92,231,0.15);border-radius:12px;font-size:11px;color:#a78bfa;">🛤️ 经历叙事</span>
+                    <span style="padding:4px 10px;background:rgba(108,92,231,0.15);border-radius:12px;font-size:11px;color:#a78bfa;">📊 数据可视化</span>
+                </div>
+            </div>
+            <div class="download-card">
+                <div class="download-icon">💜</div>
+                <h3>AI专属报告</h3>
+                <p>包含你的人生经历 + 灵魂伴侣角色说明书 + 更新记忆指令。导入任何AI，AI就化身真正了解你的知己</p>
+                <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px;">
+                    <span style="padding:4px 10px;background:rgba(46,204,113,0.15);border-radius:12px;font-size:11px;color:#2ecc71;">🛤️ 人生经历</span>
+                    <span style="padding:4px 10px;background:rgba(46,204,113,0.15);border-radius:12px;font-size:11px;color:#2ecc71;">📋 角色说明书</span>
+                    <span style="padding:4px 10px;background:rgba(46,204,113,0.15);border-radius:12px;font-size:11px;color:#2ecc71;">🔄 更新记忆指令</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 命运塔罗与观己联动 -->
+    <section class="features" id="combine">
+        <h2 class="section-title">观己 × 命运塔罗</h2>
+        <p class="section-sub">两个工具互补，更全面地认识自己</p>
+        <div class="feature-grid">
+            <div class="feature-card" style="text-align:center;">
+                <div class="feature-icon">🛤️</div>
+                <h3>观己 — 回顾过去</h3>
+                <p>用聊天记录梳理你的人生经历，生成灵魂伴侣认知手册，让AI真正了解你</p>
+            </div>
+            <div class="feature-card" style="text-align:center;">
+                <div class="feature-icon">🃏</div>
+                <h3>命运塔罗 — 展望未来</h3>
+                <p>用命运画像+塔罗牌+人生经历，AI为你占卜解惑，找到方向</p>
+            </div>
+            <div class="feature-card" style="text-align:center;">
+                <div class="feature-icon">🔗</div>
+                <h3>联动使用</h3>
+                <p>先通过观己生成个人阅读报告，再导入命运塔罗，AI结合你的人生经历来占卜，解读更精准</p>
             </div>
         </div>
     </section>
