@@ -683,7 +683,7 @@ class DataCleaner {
         }
         // 检查是否全由[xxx]标记组成（可能多个标记混合）
         const parts = content.split(/\s+/);
-        if (parts.length > 0 && parts.every(p =>
+        if (parts.every(p =>
             this.MEDIA_MARKERS.has(p) || /^\[(?:类型|媒体类型)\d+\]$/.test(p) || /^\[(?:语音|视频)\d+['\u2032]?\d*["\u2033]?\]$/.test(p)
         )) {
             this.stats.messages_filtered_media++;
@@ -1040,9 +1040,9 @@ class ChatParser {
         // 格式: 昵称(QQ号) 或 QQ123456 或 纯昵称
         const match = senderInfo.match(/^(.+?)\((\d+)\)$/);
         if (match) {
-            return { senderName: match[1].trim(), senderQQ: match[2] };
+            return { senderName: match[1].trim() };
         }
-        return { senderName: senderInfo, senderQQ: '' };
+        return { senderName: senderInfo };
     }
     
     // 解析时间戳（增强版：支持多种格式）
@@ -1245,22 +1245,13 @@ function preExtractStructuredData(messages) {
     const total = messages.length;
     const isMe = m => m.sender === 'me' || m.sender === 'self' || m.is_me;
     const myMsgs = messages.filter(isMe);
-    const otherMsgs = messages.filter(m => !isMe(m));
     
     // 时间分布
     const yearCounts = {};
-    const hourCounts = {};
-    
     for (const m of messages) {
         const ts = normalizeTs(m.timestamp);
-        if (ts) {
-            if (ts.length >= 7) {
-                yearCounts[ts.substring(0, 4)] = (yearCounts[ts.substring(0, 4)] || 0) + 1;
-            }
-            if (ts.length >= 13) {
-                const hour = ts.substring(11, 13);
-                hourCounts[hour] = (hourCounts[hour] || 0) + 1;
-            }
+        if (ts && ts.length >= 7) {
+            yearCounts[ts.substring(0, 4)] = (yearCounts[ts.substring(0, 4)] || 0) + 1;
         }
     }
     
@@ -1270,14 +1261,8 @@ function preExtractStructuredData(messages) {
         ? [timestamps[0].substring(0, 10), timestamps[timestamps.length - 1].substring(0, 10)]
         : ['', ''];
     
-    // 活跃时段
-    const nightHours = ['00','01','02','03','04','05'].reduce((s, h) => s + (hourCounts[h] || 0), 0);
-    const morningHours = ['06','07','08','09','10','11'].reduce((s, h) => s + (hourCounts[h] || 0), 0);
-    const afternoonHours = ['12','13','14','15','16','17'].reduce((s, h) => s + (hourCounts[h] || 0), 0);
-    const eveningHours = ['18','19','20','21','22','23'].reduce((s, h) => s + (hourCounts[h] || 0), 0);
-    
-    // 情绪晴雨表：按月统计正面/负面情绪词
-    const emotionMonthCounts = {}; // { '2024-01': { positive: N, negative: N } }
+    // 情绪晴雨表：按月统计正面/负面情绪词（仅用于可视化图表，不喂给AI）
+    const emotionMonthCounts = {};
     const POSITIVE_EMOTIONS = /太.{0,2}(开心|高兴|快乐|激动|兴奋|爽|嗨|感动|幸福)|好[爽嗨开心感动幸福]|开心死|高兴死|爽死/;
     const NEGATIVE_EMOTIONS = /太.{0,2}(难过|伤心|委屈|生气|愤怒|郁闷|焦虑|烦躁|崩溃|无语|无奈|失望|绝望|害怕|恐惧|恶心|烦|累|困|孤独|寂寞|迷茫|窒息|抓狂|发疯|疯了)|好[烦气累困难过崩溃绝望害怕]|受不了|扛不住|想哭|哭了|气死|烦死/;
     
@@ -1292,37 +1277,19 @@ function preExtractStructuredData(messages) {
         if (NEGATIVE_EMOTIONS.test(text)) emotionMonthCounts[ym].negative++;
     }
     
-    // 聊天对象统计
-    const chatGroups = {};
+    // 聊天对象数
+    const chatNames = new Set();
     for (const m of messages) {
-        const cw = m.chat_with || '未知';
-        if (!chatGroups[cw]) chatGroups[cw] = [];
-        chatGroups[cw].push(m);
+        if (m.chat_with) chatNames.add(m.chat_with);
     }
-    
-    const chatStats = Object.entries(chatGroups)
-        .sort((a, b) => b[1].length - a[1].length)
-        .map(([cw, msgs]) => {
-            const myCount = msgs.filter(m => m.sender === 'me' || m.sender === 'self' || m.is_me).length;
-            const otherCount = msgs.length - myCount;
-            const cwTimes = msgs.map(m => normalizeTs(m.timestamp)).filter(t => t).sort();
-            const cwRange = cwTimes.length > 0 
-                ? [cwTimes[0].substring(0, 10), cwTimes[cwTimes.length - 1].substring(0, 10)]
-                : ['', ''];
-            const sources = [...new Set(msgs.map(m => m.source).filter(s => s))];
-            return { name: cw, total: msgs.length, my_count: myCount, other_count: otherCount, my_ratio: msgs.length > 0 ? Math.round(myCount / msgs.length * 100) / 100 : 0, time_range: cwRange, sources };
-        });
     
     return {
         total_messages: total,
         my_messages: myMsgs.length,
-        other_messages: otherMsgs.length,
         time_range: timeRange,
         year_distribution: Object.fromEntries(Object.entries(yearCounts).sort()),
-        active_period: { '深夜(0-5点)': nightHours, '上午(6-11点)': morningHours, '下午(12-17点)': afternoonHours, '晚上(18-23点)': eveningHours },
         emotion_months: Object.fromEntries(Object.entries(emotionMonthCounts).sort()),
-        chat_count: Object.keys(chatGroups).length,
-        chat_stats: chatStats,
+        chat_count: chatNames.size,
     };
 }
 
@@ -1384,7 +1351,7 @@ function prepareJourneyData(messages, SAFE_CHARS) {
     for (let i = 0; i < sortedFriends.length; i++) {
         const [cw, stat] = sortedFriends[i];
         if (stat.tsSuccess === 0 && stat.tsFail > 0) { keptFriends.add(cw); continue; }
-        if (typeof forcedFriendNames !== 'undefined' && forcedFriendNames && forcedFriendNames.has(cw)) { keptFriends.add(cw); continue; }
+        if (forcedFriendNames && forcedFriendNames.has(cw)) { keptFriends.add(cw); continue; }
         if (i < TOP_FRIEND_COUNT) { keptFriends.add(cw); continue; }
         if (stat.maxTs - stat.minTs > SIX_MONTH_MS) keptFriends.add(cw);
     }
@@ -1586,7 +1553,7 @@ class GuanjiAnalyzer {
 
         let cleaned = text;
 
-        // 1. 去掉AI开场白（从开头到第一个##/###标题之前的内容）
+        // 去开场白：AI有时会在正文前加一段废话，删掉第一个标题之前的内容中符合开场白特征的行
         const firstHeading = cleaned.search(/\n#{2,3} /);
         if (firstHeading > 0) {
             const beforeHeading = cleaned.substring(0, firstHeading);
@@ -1594,7 +1561,7 @@ class GuanjiAnalyzer {
                 const trimmed = line.trim();
                 if (!trimmed) return true;
                 if (trimmed.startsWith('#') || trimmed.startsWith('|') || trimmed === '---' || trimmed.startsWith('>')) return true;
-                if (/^(好的|遵照|作为|我将|这是|朋友|没问题|明白了|收到|了解了|没问题)/.test(trimmed)) return false;
+                if (/^(好的|遵照|作为|我将|这是|朋友|没问题|明白了|收到|了解了)/.test(trimmed)) return false;
                 if (/(分析师|分析专家|我将严格|遵循你的要求|我将为您|我已仔细|根据您提供|根据你提供|我已经仔细|读完|遵照您的指示|我是.*?叙事者|我是.*?分析者|让我根据你)/.test(trimmed)) return false;
                 return true;
             });
@@ -1602,49 +1569,7 @@ class GuanjiAnalyzer {
         }
         cleaned = cleaned.replace(/^\n+/, '').replace(/^---\s*\n*/, '');
 
-        // 2. 替换AI捏造名字→"你"
-        const namePattern = cleaned.match(/以下称[\'""']?(\w{2,4})[\'""']?/);
-        if (namePattern) {
-            const fakeName = namePattern[1];
-            cleaned = cleaned.split('\n').filter(line => !line.includes('以下称')).join('\n');
-            cleaned = cleaned.replace(new RegExp(fakeName, 'g'), '你');
-        }
-
-        // 3. 清理来源标记
-        cleaned = cleaned.replace(/\s*\[来源：[^\]]*\]/g, '').replace(/\s*（来源：[^）]*）?/g, '');
-
-        // 4. 检测并替换真实姓名→"你"
-        const realNameMatch = cleaned.match(/被分析者[（(]([\u4e00-\u9fa5]{2,4})[）)]/);
-        if (realNameMatch) {
-            const realName = realNameMatch[1];
-            if (!['本人','此人','个体','对象','用户','主角'].includes(realName)) {
-                cleaned = cleaned.replace(new RegExp(realName, 'g'), '你');
-            }
-        }
-        cleaned = cleaned.replace(/被分析者[（(]你[）)]/g, '你').replace(/被分析者/g, '你');
-
-        // 5. 结婚/伴侣姓名防护
-        const weddingPatterns = [
-            /(?:新人|夫妻|夫妇|伴侣|结婚|婚礼|领证|请柬|喜帖|邀请函|老公老婆)[：:]\s*([\u4e00-\u9fa5]{2,4})和([\u4e00-\u9fa5]{2,4})/g,
-            /([\u4e00-\u9fa5]{2,4})和([\u4e00-\u9fa5]{2,4})(?:的婚礼|的结婚|的请柬|的喜帖|的领证|结婚了|办婚礼|登记了)/g,
-        ];
-        for (const wp of weddingPatterns) {
-            const match = wp.exec(cleaned);
-            if (match) {
-                const exclude = ['本人','此人','个体','对象','用户','主角','大家','朋友'];
-                if (!exclude.includes(match[1]) && !exclude.includes(match[2])) {
-                    const repl = cleaned.substring(0, match.index) + cleaned.substring(match.index).replace(match[0], '你和你伴侣');
-                    if (repl !== cleaned) { cleaned = repl; break; }
-                }
-            }
-        }
-
-        // 6. 清理可信度标识
-        cleaned = cleaned.replace(/[🟢🟡🔴]\s*(高可信|中可信|低可信|确认|疑似|待确认)?/g, '');
-        cleaned = cleaned.replace(/（?[🟢🟡🔴][^）]*）?/g, '');
-        cleaned = cleaned.replace(/\s*可信度[：:]\s*高|中|低/g, '');
-
-        // 7. 年份校验
+        // 年份校验：检查报告中的年份是否超出数据覆盖范围
         if (minYear !== null && maxYear !== null) {
             const yearMatches = [...cleaned.matchAll(/(\d{4})年/g)];
             const suspiciousYears = [...new Set(yearMatches
@@ -1660,57 +1585,17 @@ class GuanjiAnalyzer {
     }
 
     async _analyzeJourney(chatData) {
-        const prompt = `你是人生经历叙事者。用第一人称"我"把聊天记录中我的人生经历讲成连贯的故事。
+        const prompt = `请用第一人称"我"，把以下数据串成一篇连贯的人生经历叙事，像一个人在回忆自己的人生一样去写。聊天记录中如果提到地点可以自然地写出来，没有提到就不要编造。
 
-【核心任务】
-你什么时候在哪、做了什么、谁在你身边、发生了什么改变你的事——按时间线讲清楚。
+现在发给你的数据，是从我的微信/QQ聊天记录中提取和采样得到的，经过以下处理：
 
-**不仅要写你经历了什么，还要自然地写出：**
-- 你在意什么、为什么在意（从你的选择和行为中体现）
-- 你遇到困难时是怎么应对的（逃避？硬扛？找人帮忙？）
-- 你反复做出的选择有什么模式（你放弃了什么、坚持了什么）
-- 你身边的关系对你意味着什么
+1. **数据清洗**：原始聊天记录中的图片、语音、视频、红包、文件等媒体标记消息被过滤，通话记录、撤回提示等系统消息也被过滤，只保留真实的文字对话内容。
 
-把这些融入在叙事中，不需要单独列章节分析——一个人看完你的故事，自然会理解你。
+2. **好友保护**：统计每个聊天对象的消息总量和时间跨度，保留消息量最多的前 200 个好友，以及虽然消息少但认识时间超过 6 个月的好友（用户也可手动勾选强制保留某些好友）。
 
-【数据格式】
-发给你的聊天记录每条由三部分组成：
-- 时间戳（格式 YYYY-MM-DD HH:mm）标记事件发生的准确时间
-- 发送者标签（我 或 某人名）标记是谁说的
-- 冒号后面的内容
+3. **分层采样**：由于原始数据量远超 AI 的上下文限制，需要对数据进行采样。采样策略是按月份和聊天对象分层分配的——每个月的预算根据该月的消息量占总消息量的比例来分配（消息多的月份拿到更多预算，但最少保底 500 字），每月内再按聊天对象的消息量比例分配到每个好友。对每个好友的消息做均匀时间采样，每条被选中的消息会携带前后各 1 条邻居消息，以保留对话的上下文和连贯性。最终输出是时间上均匀覆盖、保留了对话连续性的采样文本。
 
-如果别人的消息里出现"根""哥""兄弟"等称呼，那是别人在称呼你，不是那个人在说自己。
-
-【数据来源】
-以下数据是从原始聊天记录中采样得到的，不是完整记录：
-- 按月份和聊天对象分配字符预算：聊天越多的月份、聊越多的对象，保留的内容越多
-- 在预算内做均匀时间采样，每条被选中的消息前后邻居也保留，以保持对话上下文
-- 因此：某个时段内容丰富=那段时间聊天活跃；内容少或缺了某人=原始数据本身就少，不是遗漏；相邻消息属于同一次对话
-
-【聊天语言特点】
-聊天记录用的是真实聊天语言，和书面语不同：
-1. 省略主语：人们常不说"我"，直接说"到了"、"面试完了"——这默认是"我"在说
-2. 简写缩写："昆北"="昆明北市区"、"面试"="去面试/有面试"
-3. 反语/夸张："太爽了要死了"="非常满意"——看语气，不是字面意思
-4. 省略人称："他"可能指之前提到的某人
-5. 回答依赖：如果消息是"还行吧"，它是对上一条对方问题的回答
-
-【地点】
-- 地点信息写在正文中，不需要出现在标题里
-- 如果消息中提到了某个城市/地点，在内容中写那个地点
-- 如果一段时间内提到多个城市，说明在旅居，在内容中自然描述即可
-- 如果没有任何地点信息，延续上一段的地点或省略不写
-- 不要自己编造地点
-
-【叙事结构】
-按时间顺序，每到一个新的时间段就新开一段：
-### [年份]（或 [年份月]）
-- 你在做什么、处于什么状态
-- 发生了什么重要的事（低谷和转折）
-- 谁在你身边、什么关系、对你有什么影响
-- 这段经历改变了你什么
-- 从你的选择中可以看出你在意什么
-- 地点信息写在内容里，不需要写在标题中
+4. **硬事实**：在聊天内容之前，有一段代码直接从原始数据中提取的硬事实（数据时间范围、总消息数、你发了多少条、聊天对象数、年度消息分布），这些数据 100% 准确，可以作为你判断时间线和数据规模的锚点。
 
 以下聊天记录：
 ${chatData}
@@ -1906,20 +1791,10 @@ ${journey}
 
 ### 如何理解我
 读完了我的人生经历，现在你已经知道：
-- **我遇到过什么**：我的经历、我在哪里、和谁在一起
-- **我在意什么**：从我的选择和反复做的事情中能看到的
-
-请从这个真实的样子出发理解我。如果我说的某件事让你困惑，回到这段经历中去理解——它一定在那里有根源。
+- 我的经历，我追求什么，为什么追求
 
 ### 如何帮助我
-- **当我困惑时**：不要给我通用建议。用你从经历中了解到的"我"去看待这件事
-- **当我难过时**：陪着我就好。我需要的不是解决方案，是有人理解我为什么难过
-- **当我需要方向时**：帮我看到我真正在意的是什么，然后陪我想办法
-
-### 我如何面对困难
-这部分需要你从经历中自己去总结——我遇到困难时是什么反应？
-是硬扛、逃避、找人倾诉，还是别的？我擅长什么、不擅长什么？
-知道了这些，你才能在我遇到困难时用对的方式帮我。
+- 我遇到困难时，能从我的角度出发看待问题，帮我找到方向
 
 ---
 
@@ -1929,13 +1804,9 @@ ${journey}
 
 当我对你说"更新记忆"时：
 
-1. 保留上面"我的人生经历"中的所有内容不变。
+保留上面"我的人生经历"中的所有内容不变。
 
-2. 回顾你和我最近的对话，从中提取新发生的重要事情——我在哪、和谁、在做什么、有什么变化——然后按照人生经历的叙事格式，追加到人生经历末尾作为新章节：
-   - 用 ### 年份 作为标题
-   - 按时间线讲述这个时间段内我在哪、和谁、经历了什么、怎么应对的
-   - 保持第一人称"我"，像讲故事一样写
-   - 新章节的格式和语气要和上面已有的人生经历保持一致
+回顾你和我最近的对话，从中提取新发生的重要事情，用第一人称"我"，串成一篇连贯的人生经历叙事，像一个人在回忆自己的人生一样去写。聊天记录中如果提到地点可以自然地写出来，没有提到就不要编造，追加到人生经历末尾作为新章节。
 
 ---
 
@@ -1975,7 +1846,6 @@ let cleanedData = null;
 let lastStructuredData = null; // 保存结构化数据供情绪图表使用
 // 强制保留的好友列表（用户勾选后追加，键为chat_with名称）
 let forcedFriendNames = new Set();
-// 增量同步：旧报告内容和来源文件
 // 所有对话统计（用于好友保护列表）
 let allConversationsStats = [];
 
@@ -2299,13 +2169,11 @@ function renderFriendsProtection(limit = 50) {
     const sourceIcon = { wechat: '💬', qq: '🐧', unknown: '❓' };
 
     function renderChip(f, showStatus) {
-        showStatus = showStatus || false;
         const icon = sourceIcon[f.source] || '💬';
         const forced = forcedFriendNames.has(f.name);
-        var daysStr = f.days > 365 ? Math.round(f.days/30) + '个月' : f.days > 30 ? Math.round(f.days/30) + '个月' : f.days + '天';
+        var daysStr = f.days > 30 ? Math.round(f.days/30) + '个月' : f.days + '天';
         var statusTag = '';
-        if (showStatus && !forced) statusTag = '<span style="color:#ff6b6b;font-size:10px;">将被丢弃</span>';
-        else if (showStatus && forced) statusTag = '<span style="color:#00cec9;font-size:10px;">✓已保留</span>';
+        if (showStatus) statusTag = forced ? '<span style="color:#00cec9;font-size:10px;">✓已保留</span>' : '<span style="color:#ff6b6b;font-size:10px;">将被丢弃</span>';
 
         return '<label style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);cursor:pointer;font-size:12px;' + (forced ? 'background:rgba(0,206,201,0.12);border:1px solid rgba(0,206,201,0.3);' : '') + '" title="' + f.name + '">' +
             '<input type="checkbox" onchange="toggleForcedFriend(\'' + (f.name||'').replace(/'/g, "\\'") + '\', this.checked)" ' + (forced ? 'checked' : '') + ' style="accent-color:var(--success);cursor:pointer;">' +
@@ -2352,7 +2220,7 @@ function renderFriendsProtection(limit = 50) {
 
     // 已保留好友（可折叠，仅当有被丢弃时才显示折叠区）
     if (kept.length > 0 && dropped.length > 0) {
-        html += '<details style="margin-top:14px;' + (dropped.length === 0 ? '' : '') + '">';
+        html += '<details style="margin-top:14px;">';
         html += '<summary style="font-size:12px;color:var(--text-dim);cursor-pointer;user-select:none;">👁️ 已保留的好友 (' + kept.length + '个) — 点击展开查看</summary>';
         html += '<div id="friends-kept-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;max-height:150px;overflow-y:auto;margin-top:8px;">';
         for (var ki = 0; ki < kept.length; ki++) { html += renderChip(kept[ki], false); }
@@ -2386,7 +2254,7 @@ function filterFriends(query) {
     });
 }
 
-// 展开全部好友（现在是展开被丢弃的好友列表）
+// 展开/收起被丢弃的好友列表
 let friendsExpanded = false;
 function expandFriendsList() {
     friendsExpanded = !friendsExpanded;
