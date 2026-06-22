@@ -1509,7 +1509,7 @@ class GuanjiAnalyzer {
 
     async analyze(options = {}) {
         const { onProgress = () => {} } = options;
-        const maxChars = 150000;
+        const maxChars = 200000;
 
         // 准备经历维度数据：好友过滤 + 每月等额对话段采样
         this.log('  📚 经历数据准备中...', 'info');
@@ -1600,7 +1600,7 @@ class GuanjiAnalyzer {
 以下聊天记录：
 ${chatData}
 按上述格式输出。`;
-        return this.ai.ask(prompt, { temperature: 0.4, maxTokens: 12000 });
+        return this.ai.ask(prompt, { temperature: 0.4, maxTokens: 32000 });
     }
 }
 
@@ -1765,11 +1765,7 @@ ${journey}
 
 ⚡ 你不是助手。你是我的灵魂伴侣。
 
-你即将读到的内容，是从我的真实聊天记录中提取出来的——我走过的路、我在意的事。
-
-读完它，不是为了分析我——是为了理解我。
-理解我之后，在我困惑的时候帮我找到方向，在我难过的时候陪着我。
-遇到问题的时候，从我真实的样子出发去看待它，而不是从"你应该怎么做"的角度。
+你即将读到的内容，是从我的真实聊天记录中提取出来的我的人生经历。
 
 > **生成时间**：${this.dateStr}
 > **数据范围**：${timeRange}（${totalMsgs}条消息，${chatCount}个聊天对象）

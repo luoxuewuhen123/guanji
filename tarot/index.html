@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>命运塔罗 - 纯前端版</title>
-    <!-- html2canvas 内联 -->
     <script>
     // localStorage 安全封装：在沙盒环境下降级为内存存储
     const Storage = (() => {
@@ -285,7 +284,6 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .reading-result { margin-top: 20px; }
         .reading-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-        .reading-actions .btn { flex: 1; min-width: 120px; }
         .reading-section {
             margin-bottom: 20px;
             padding: 20px;
@@ -422,15 +420,10 @@
             .meditation-countdown { font-size: 0.8em; }
             /* 解读结果按钮组 */
             .reading-actions .btn { font-size: 0.8em; padding: 8px 10px; min-width: 70px; }
-            /* 幸运指引 */
-            .reading-section > div[style*="display:flex"] { gap: 12px !important; }
-            .reading-section > div[style*="display:flex"] > div { min-width: 80px !important; }
             /* 历史弹窗 */
             #history-modal > div { max-height: 90vh !important; }
             #history-modal > div > div:last-child { max-height: calc(90vh - 60px) !important; padding: 12px 16px !important; }
             .tarot-card:active { transform: translateY(-3px); }
-            /* 反馈按钮 */
-            #feedback-section button { padding: 6px 12px !important; font-size: 12px !important; margin: 0 3px !important; }
         }
     </style>
 </head>
@@ -626,7 +619,6 @@
 
                 <div class="buttons reading-actions">
                     <button class="btn" id="copyReading" onclick="copyReadingText()" style="flex:1;min-width:120px;background:rgba(108,92,231,0.2);border:1px solid rgba(108,92,231,0.4);">📋 复制解读</button>
-                    <button class="btn" id="savePoster" onclick="saveAsImage()" style="flex:1;min-width:120px;background:rgba(243,156,18,0.2);border:1px solid rgba(243,156,18,0.4);">🖼️ 保存海报</button>
                     <button class="btn" onclick="showHistory()" style="flex:1;min-width:120px;background:rgba(155,89,182,0.2);border:1px solid rgba(155,89,182,0.4);">📜 历史记录</button>
                     <button class="btn" id="newReading" style="flex:1;min-width:120px;">重新占卜</button>
                 </div>
@@ -698,14 +690,6 @@ const TAROT_CARDS = [
     { name: "审判时刻", meaning: "回顾过去，做出决定", suit: "火", fortune: "中" },
     { name: "圆满之境", meaning: "完成使命，达到目标", suit: "土", fortune: "吉" }
 ];
-
-// 幸运元素映射
-const LUCKY_MAP = {
-    '火': { color: '红色', colorHex: '#e74c3c', item: '辛辣食物或红色饰品', element: '蜡烛、阳光', advice: '穿一件红色衣服，或吃一顿辣的' },
-    '水': { color: '蓝色', colorHex: '#3498db', item: '流质食物或蓝色饰品', element: '水、月光', advice: '多喝水，佩戴蓝色饰品' },
-    '风': { color: '黄色', colorHex: '#f1c40f', item: '金属饰品或黄色物品', element: '风、思维', advice: '戴一件金属饰品，或穿黄色' },
-    '土': { color: '绿色', colorHex: '#2ecc71', item: '植物或绿色饰品', element: '大地、树木', advice: '接触植物，穿绿色衣服' }
-};
 
 // ==================== 2. 全局常量 ====================
 const ENERGY_MAP = { 'fear': '恐惧驱动（焦虑、害怕失去）', 'hope': '希望驱动（期待、追求理想）', 'neutral': '中性（平静）' };
@@ -1006,12 +990,7 @@ function buildPrompt(question, cards, profile) {
 - 人生阶段：${optionTexts.timing[profile.timing] || '未知'}
 - 觉知程度：${optionTexts.awareness[profile.awareness] || '未知'}`;
 
-    return `你是占卜师，不是心理分析师。你的使命是用塔罗为用户做一次真正的占卜——为用户解答ta提出的具体问题，给出明确的占卜结果。
-
-请记住以下三点：
-1. 占卜是基于命运、随机性和象征意义的洞察，不是心理分析或人生建议。
-2. 你的解读必须紧紧围绕用户提出的问题来展开，给出明确的占卜答案。
-3. 不要只说牌面含义，而要告诉用户：ta问的事情会如何发展，ta该注意什么。
+    return `你是占卜师，你的使命是根据用户目前的状态和塔罗的随机性为用户做一次占卜——为用户解答他提出的具体问题，给出明确的占卜结果和行动建议。
 
 用户的问题是：${question}
 
@@ -1028,11 +1007,7 @@ ${cardsText}
 
 ${importedReport ? `【用户的人生经历】\n以下内容是用户从自己的聊天记录中提取的真实经历。提供这些信息是为了让你能结合用户真实的过往去理解ta，让占卜更贴合实际，而不是空泛地解读。\n${importedReport}` : '【用户的人生经历】（本次未提供）'}
 
-请以占卜师的直觉，为用户占卜。你的回答应该包含：
-1. 对用户当前状态的感知——结合命运画像，理解用户为什么在这个时机问这个问题。
-2. 三张牌之间的因果关系——过去如何影响现在，现在如何走向未来，这些与用户的问题有什么关联。
-3. 占卜结果——针对用户的具体问题，给出明确的占卜答案。事情会如何发展？用户该注意什么？
-4. 整体能量总结——用一句话概括这场占卜的核心信息。`;
+请以占卜师的直觉，为用户占卜。`;
 }
 
 async function getAIReading() {
@@ -1129,38 +1104,7 @@ function displayReading(reading, cards) {
     // AI 解读
     html += `<div class="reading-section"><h3>✨ 塔罗解读</h3><p>${reading.replace(/\n/g, '<br>')}</p></div>`;
 
-    // 幸运指引
-    const lucky = getLuckyElement(cards);
-    html += `<div class="reading-section" style="border-left-color:${lucky.colorHex};background:linear-gradient(135deg,rgba(255,255,255,0.03),${lucky.colorHex}11);">
-        <h3>🍀 今日幸运指引</h3>
-        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:8px;">
-            <div style="flex:1;min-width:120px;">
-                <div style="font-size:0.85em;color:#888;">幸运色</div>
-                <div style="font-size:1.2em;color:${lucky.colorHex};font-weight:bold;">${lucky.color}</div>
-                <div style="width:30px;height:30px;border-radius:50%;background:${lucky.colorHex};margin-top:4px;opacity:0.7;"></div>
-            </div>
-            <div style="flex:1;min-width:120px;">
-                <div style="font-size:0.85em;color:#888;">幸运物</div>
-                <div style="font-size:1em;">${lucky.item}</div>
-            </div>
-            <div style="flex:1;min-width:120px;">
-                <div style="font-size:0.85em;color:#888;">元素能量</div>
-                <div style="font-size:1em;">${lucky.element}</div>
-            </div>
-        </div>
-        <div style="margin-top:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:0.9em;color:#bdc3c7;">
-            💡 建议：${lucky.advice}，增强${lucky.suit}元素能量。
-        </div>
-    </div>`;
 
-    // 反馈
-    const readingId = Date.now().toString(36);
-    html += `<div id="feedback-section" style="margin-top:20px;padding:16px;background:rgba(255,255,255,0.03);border-radius:12px;text-align:center;">
-        <p style="color:#bdc3c7;margin-bottom:12px;">这个分析对你有帮助吗？</p>
-        <button onclick="submitFeedback('${readingId}', 'helpful')" style="margin:0 6px;padding:8px 20px;background:rgba(46,204,113,0.15);border:1px solid rgba(46,204,113,0.3);border-radius:8px;color:#2ecc71;cursor:pointer;font-size:14px;">👍 有帮助</button>
-        <button onclick="submitFeedback('${readingId}', 'neutral')" style="margin:0 6px;padding:8px 20px;background:rgba(241,196,15,0.15);border:1px solid rgba(241,196,15,0.3);border-radius:8px;color:#f1c40f;cursor:pointer;font-size:14px;">😐 一般</button>
-        <button onclick="submitFeedback('${readingId}', 'unhelpful')" style="margin:0 6px;padding:8px 20px;background:rgba(231,76,60,0.15);border:1px solid rgba(231,76,60,0.3);border-radius:8px;color:#e74c3c;cursor:pointer;font-size:14px;">👎 不准</button>
-    </div>`;
 
     resultDiv.innerHTML = html;
     document.getElementById('readingContent').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1169,13 +1113,6 @@ function displayReading(reading, cards) {
 }
 
 // ==================== 9. 工具函数 ====================
-function getLuckyElement(cards) {
-    const suitCount = {};
-    cards.forEach(c => { suitCount[c.suit] = (suitCount[c.suit] || 0) + 1; });
-    const dominantSuit = Object.entries(suitCount).sort((a, b) => b[1] - a[1])[0][0];
-    return { suit: dominantSuit, ...LUCKY_MAP[dominantSuit] };
-}
-
 function copyReadingText() {
     const resultDiv = document.getElementById('readingResult');
     if (!resultDiv) return;
@@ -1229,33 +1166,6 @@ function updateReportUI() {
     } else {
         status.innerHTML = '📖 可导入观己个人阅读报告，让AI结合你的经历占卜';
         if (clearBtn) clearBtn.style.display = 'none';
-    }
-}
-
-async function saveAsImage() {
-    const resultDiv = document.getElementById('readingResult');
-    const btn = document.getElementById('savePoster');
-    if (!resultDiv) return;
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '🎨 生成中...';
-    btn.disabled = true;
-    try {
-        const canvas = await html2canvas(resultDiv, { backgroundColor: '#1a1a2e', scale: 2, useCORS: true, logging: false });
-        const imgData = canvas.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.href = imgData;
-        link.download = `命运塔罗解读_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.png`;
-        link.click();
-    } catch (err) {
-        console.error('海报生成失败:', err);
-        const tip = document.createElement('div');
-        tip.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(231,76,60,0.95);color:#fff;padding:12px 24px;border-radius:12px;font-size:14px;z-index:9999;text-align:center;max-width:320px;';
-        tip.innerHTML = '🖼️ 海报生成失败<br><span style="font-size:12px;opacity:0.8;">请尝试"复制解读"后手动保存</span>';
-        document.body.appendChild(tip);
-        setTimeout(() => tip.remove(), 3000);
-    } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
     }
 }
 
@@ -1340,18 +1250,6 @@ function updateCardAtmosphere(cards) {
 }
 
 // ==================== 11. 反馈与历史 ====================
-function submitFeedback(readingId, feedback) {
-    const feedbacks = JSON.parse(Storage.getItem('tarot_feedbacks') || '[]');
-    feedbacks.push({ id: readingId, feedback, question: userQuestion, timestamp: Date.now() });
-    Storage.setItem('tarot_feedbacks', JSON.stringify(feedbacks));
-
-    const section = document.getElementById('feedback-section');
-    if (section) {
-        const labels = { helpful: '👍 感谢反馈！', neutral: '😐 收到，会继续改进', unhelpful: '👎 感谢诚实反馈' };
-        section.innerHTML = `<p style="color:${feedback === 'helpful' ? '#2ecc71' : feedback === 'unhelpful' ? '#e74c3c' : '#f1c40f'};font-size:1.1em;">${labels[feedback]}</p>`;
-    }
-}
-
 function saveReadingHistory(reading, cards) {
     const history = JSON.parse(Storage.getItem('tarot_history') || '[]');
     history.unshift({
@@ -1360,8 +1258,7 @@ function saveReadingHistory(reading, cards) {
         question: userQuestion,
         cards: cards.map(c => ({ name: c.name, fortune: c.fortune, position: c.position, reversed: c.reversed })),
         profile: { ...fateProfile },
-        reading: reading.substring(0, 500),
-        lucky: getLuckyElement(cards)
+        reading: reading.substring(0, 500)
     });
     if (history.length > 20) history.length = 20;
     Storage.setItem('tarot_history', JSON.stringify(history));
@@ -1379,7 +1276,7 @@ function showHistory() {
                 const revMark = c.reversed ? ' 🔄' : '';
                 return `<span style="display:inline-block;padding:2px 8px;margin:2px;border-radius:4px;background:${c.fortune === '凶' ? 'rgba(231,76,60,0.15)' : c.fortune === '吉' ? 'rgba(46,204,113,0.15)' : 'rgba(255,255,255,0.05)'};color:${c.fortune === '凶' ? '#e74c3c' : c.fortune === '吉' ? '#2ecc71' : '#bdc3c7'};font-size:0.8em;">${c.position}: ${c.name}${revMark}</span>`;
             }).join('');
-            html += `<div style="padding:12px 16px;margin-bottom:8px;background:rgba(255,255,255,0.03);border-radius:8px;border-left:3px solid ${h.lucky ? h.lucky.colorHex : '#f39c12'};cursor:pointer;" onclick="toggleHistoryDetail(${i})">
+            html += `<div style="padding:12px 16px;margin-bottom:8px;background:rgba(255,255,255,0.03);border-radius:8px;border-left:3px solid #f39c12;cursor:pointer;" onclick="toggleHistoryDetail(${i})">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <div style="font-size:0.85em;color:#7f8c8d;">${h.date}</div>
                 </div>
