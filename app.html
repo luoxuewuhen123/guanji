@@ -1511,7 +1511,7 @@ class GuanjiAnalyzer {
         const { onProgress = () => {} } = options;
         const maxChars = 200000;
 
-        // 准备经历维度数据：好友过滤 + 每月等额对话段采样
+        // 准备经历维度数据：好友过滤 + 按消息量比例分配预算 + 均匀块采样
         this.log('  📚 经历数据准备中...', 'info');
         onProgress(1, 2, '准备经历数据...');
         const journeyData = prepareJourneyData(this.messages, maxChars);
@@ -1698,7 +1698,7 @@ const AIEngine = {
         this._analyzer.log(`  - 聊天对象: ${structuredData.chat_count}个`, 'info');
         const yearDist = Object.entries(structuredData.year_distribution).map(([y, c]) => `${y}:${c}`).join(', ');
         this._analyzer.log(`  - 年度分布: {${yearDist}}`, 'info');
-        this._analyzer.log(`  - 数据策略: Top200好友+长期关系保护 → 经历维度每月等额预算选取高质量对话段`, 'info');
+        this._analyzer.log(`  - 数据策略: Top200好友+长期关系保护 → 按消息量比例分配预算 + 均匀块采样`, 'info');
 
         this._analyzer.log(`[INFO] 单维度分析模式：AI读取完整经历叙事，从中理解你的一切`, 'info');
 
