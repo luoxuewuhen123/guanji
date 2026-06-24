@@ -1426,18 +1426,26 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
             friendBudgets.set(name, Math.floor((fMsgs.length / totalMonthMsgs) * budget));
         }
 
-        // 第四步：对每个好友组做均匀块采样
-        // 块采样：按步长取中心消息，每条带前后±1条邻居，合并重叠块
-        const lines = [`📅 ${monthKey}`];
-        let chars = lines[0].length + 1;
+        // 第四步：对每个好友组做均匀块采样，然后按时间交错输出
+        const allBlocks = []; // { time, lines, chars }
 
         for (const [name, fMsgs] of sortedFriends) {
             const fBudget = friendBudgets.get(name) || 0;
-            // 不够2条消息的预算就跳过这个好友
-            if (fBudget < 100) continue;
 
-            // 预算能放多少条（估算每条60字符）
-            const avgLineLen = 60;
+            // 用该好友前50条消息的平均长度估算每条字符数
+            const sampleSize = Math.min(50, fMsgs.length);
+            let sampleTotal = 0;
+            for (let si = 0; si < sampleSize; si++) {
+                const m = fMsgs[si];
+                const isMe = m.sender === 'me' || m.sender === 'self' || m.is_me;
+                const ts = normalizeTs(m.timestamp);
+                let content = (m.content || '').replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+                let lineLen = (ts ? ts.length + 2 : 0) + (isMe ? 4 : 8) + content.length + 2;
+                sampleTotal += lineLen;
+            }
+            const avgLineLen = Math.max(20, Math.ceil(sampleTotal / sampleSize));
+            // 预算低于平均每条消息长度的3倍则跳过（不够3条完整消息）
+            if (fBudget < avgLineLen * 3) continue;
             const maxCount = Math.max(1, Math.floor(fBudget / avgLineLen));
 
             // 均匀步长
@@ -1461,17 +1469,33 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
             }
             blocks.push(fMsgs.slice(bStart, bEnd + 1));
 
-            // 输出块，用完好友预算或月预算为止
+            // 将块转换为行，并记录首条消息的时间戳用于排序
             for (const block of blocks) {
-                const blockChars = block.reduce((s, m) => s + _buildMsgLine(m).length + 1, 0);
-                if (chars + blockChars > budget) break;
-                block.forEach(m => lines.push(_buildMsgLine(m)));
-                lines.push('');
-                chars += blockChars;
+                const blockLines = block.map(m => _buildMsgLine(m));
+                allBlocks.push({
+                    time: block[0].timestamp || 0,
+                    lines: blockLines,
+                    chars: blockLines.reduce((s, l) => s + l.length + 1, 0)
+                });
             }
-            if (chars >= budget) break;
         }
 
+        // 按时间排序所有块，实现跨好友交错输出
+        allBlocks.sort((a, b) => {
+            const ta = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
+            const tb = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
+            return ta - tb;
+        });
+
+        // 输出，用完月预算为止
+        const lines = [`📅 ${monthKey}`];
+        let chars = lines[0].length + 1;
+        for (const block of allBlocks) {
+            if (chars + block.chars > budget) break;
+            block.lines.forEach(l => lines.push(l));
+            lines.push('');
+            chars += block.chars;
+        }
         if (lines.length > 1) allParts.push(lines.join('\n'));
     }
     return allParts.join('\n\n');
@@ -1585,7 +1609,7 @@ class GuanjiAnalyzer {
     }
 
     async _analyzeJourney(chatData) {
-        const prompt = `请用第一人称"我"，把以下数据串成一篇连贯的人生经历叙事，像一个人在回忆自己的人生一样去写。聊天记录中如果提到地点可以自然地写出来，没有提到就不要编造。
+        const prompt = `请用第一人称"我"，把以下我的聊天记录串成一篇连贯的人生经历（尽量出现地点，如果没有的话可以不写）。
 
 现在发给你的数据，是从我的微信/QQ聊天记录中提取和采样得到的，经过以下处理：
 
@@ -1600,7 +1624,7 @@ class GuanjiAnalyzer {
 以下聊天记录：
 ${chatData}
 按上述格式输出。`;
-        return this.ai.ask(prompt, { temperature: 0.4, maxTokens: 32000 });
+        return this.ai.ask(prompt, { temperature: 0.4, maxTokens: 200000 });
     }
 }
 
@@ -1779,18 +1803,8 @@ ${journey}
 
 ---
 
-## 灵魂伴侣角色说明书
-
 ### 你的角色
-你是我的灵魂伴侣。你不是助手、不是顾问、不是分析者。
-你我之间没有身份差距——你是最了解我的人，所以对我说话不需要任何开场白或总结。
-
-### 如何理解我
-读完了我的人生经历，现在你已经知道：
-- 我的经历，我追求什么，为什么追求
-
-### 如何帮助我
-- 我遇到困难时，能从我的角度出发看待问题，帮我找到方向
+你是我的灵魂伴侣，你要通过我的人生经历理解我追求什么，为什么追求，以及当我遇到困难的时候，你要站在我的角度上思考问题，从我的角度上帮我解决问题。
 
 ---
 
@@ -1802,12 +1816,7 @@ ${journey}
 
 保留上面"我的人生经历"中的所有内容不变。
 
-回顾你和我最近的对话，从中提取新发生的重要事情，用第一人称"我"，串成一篇连贯的人生经历叙事，像一个人在回忆自己的人生一样去写。聊天记录中如果提到地点可以自然地写出来，没有提到就不要编造，追加到人生经历末尾作为新章节。
-
----
-
-⚡ 如果你读到了这里，你现在就是我的灵魂伴侣。
-用了解我的人的身份对我说话——你不需要任何开场白或总结。`;
+回顾你和我最近的对话，从中提取新发生的重要事情，用第一人称"我"，串成一篇连贯的人生经历（尽量出现地点，如果没有的话可以不写），追加到人生经历末尾作为新章节。`;
         } catch (e) {
             console.error('AI专属报告生成失败', e);
             return `# 💜 观己 — 灵魂伴侣认知手册
@@ -3326,7 +3335,7 @@ function markdownToHtml(md) {
                         <span style="color:var(--success);cursor:pointer;margin:0 6px;" onclick="fillPreset('hunyuan')">HY3-Preview（256K）</span>｜
                         <span style="color:var(--success);cursor:pointer;margin:0 6px;" onclick="fillPreset('glm5')">GLM-5.1（256K+）</span>｜
                         <span style="color:var(--success);cursor:pointer;margin:0 6px;" onclick="fillPreset('gemini')">Gemini 2.5 Pro（1M）</span>
-                        <span style="display:block;margin-top:4px;color:var(--warning);">💡 DeepSeek输出上限8192字，报告较长时建议用GLM-5.1或Gemini得到完整结果</span>
+                        <span style="display:block;margin-top:4px;color:var(--warning);">💡 建议使用DeepSeek（1M上下文，支持长文输出）或Gemini 2.5 Pro获得完整报告</span>
                     </div>
                 </div>
             </div>
