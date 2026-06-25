@@ -1426,8 +1426,9 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
             friendBudgets.set(name, Math.floor((fMsgs.length / totalMonthMsgs) * budget));
         }
 
-        // 第四步：对每个好友组做均匀块采样，然后按时间交错输出
-        const allBlocks = []; // { time, lines, chars }
+        // 第四步：对每个好友组做均匀块采样，按好友顺序输出
+        const lines = [`📅 ${monthKey}`];
+        let chars = lines[0].length + 1;
 
         for (const [name, fMsgs] of sortedFriends) {
             const fBudget = friendBudgets.get(name) || 0;
@@ -1469,33 +1470,17 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
             }
             blocks.push(fMsgs.slice(bStart, bEnd + 1));
 
-            // 将块转换为行，并记录首条消息的时间戳用于排序
+            // 输出块，用完好友预算或月预算为止
             for (const block of blocks) {
-                const blockLines = block.map(m => _buildMsgLine(m));
-                allBlocks.push({
-                    time: block[0].timestamp || 0,
-                    lines: blockLines,
-                    chars: blockLines.reduce((s, l) => s + l.length + 1, 0)
-                });
+                const blockChars = block.reduce((s, m) => s + _buildMsgLine(m).length + 1, 0);
+                if (chars + blockChars > budget) break;
+                block.forEach(m => lines.push(_buildMsgLine(m)));
+                lines.push('');
+                chars += blockChars;
             }
+            if (chars >= budget) break;
         }
 
-        // 按时间排序所有块，实现跨好友交错输出
-        allBlocks.sort((a, b) => {
-            const ta = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
-            const tb = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
-            return ta - tb;
-        });
-
-        // 输出，用完月预算为止
-        const lines = [`📅 ${monthKey}`];
-        let chars = lines[0].length + 1;
-        for (const block of allBlocks) {
-            if (chars + block.chars > budget) break;
-            block.lines.forEach(l => lines.push(l));
-            lines.push('');
-            chars += block.chars;
-        }
         if (lines.length > 1) allParts.push(lines.join('\n'));
     }
     return allParts.join('\n\n');
@@ -1609,9 +1594,9 @@ class GuanjiAnalyzer {
     }
 
     async _analyzeJourney(chatData) {
-        const prompt = `请用第一人称"我"，把以下我的聊天记录串成一篇连贯的人生经历（尽量出现地点，如果没有的话可以不写）。
+        const prompt = `请用第一人称"我"，用以下我的聊天记录生成一篇我的人生经历（尽量出现地点，如果没有的话可以不写）。
 
-现在发给你的数据，是从我的微信/QQ聊天记录中提取和采样得到的，经过以下处理：
+现在发给你的数据，是从我的微信/QQ聊天记录中提取和采样得到的，并按好友顺序排列，聊天记录经过以下处理：
 
 1. **数据清洗**：原始聊天记录中的图片、语音、视频、红包、文件等媒体标记消息被过滤，通话记录、撤回提示等系统消息也被过滤，只保留真实的文字对话内容。
 
@@ -1787,7 +1772,6 @@ ${journey}
 
             return `# 💜 观己 — 灵魂伴侣认知手册
 
-⚡ 你不是助手。你是我的灵魂伴侣。
 
 你即将读到的内容，是从我的真实聊天记录中提取出来的我的人生经历。
 
@@ -1816,12 +1800,10 @@ ${journey}
 
 保留上面"我的人生经历"中的所有内容不变。
 
-回顾你和我最近的对话，从中提取新发生的重要事情，用第一人称"我"，串成一篇连贯的人生经历（尽量出现地点，如果没有的话可以不写），追加到人生经历末尾作为新章节。`;
+回顾你和我最近的对话，从中提取新发生的重要事情，用第一人称"我"，生成一篇我的人生经历（尽量出现地点，如果没有的话可以不写），追加到人生经历末尾作为新章节。`;
         } catch (e) {
             console.error('AI专属报告生成失败', e);
             return `# 💜 观己 — 灵魂伴侣认知手册
-
-⚡ 你不是助手。你是我的灵魂伴侣。
 
 以下内容基于真实聊天记录提取——读完后，用了解我的人的身份对我说话。
 
