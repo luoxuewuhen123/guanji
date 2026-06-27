@@ -778,9 +778,10 @@ class ChatParser {
         if (namePart.includes('_')) {
             // 取最后一个下划线前的部分作为名称（Python: namePart.rsplit('_', 1)[0]）
             const lastIdx = namePart.lastIndexOf('_');
-            return namePart.substring(0, lastIdx);
+            namePart = namePart.substring(0, lastIdx);
         }
-        return namePart;
+        // 文件名中的下划线在聊天内容中可能是空格，统一替换
+        return namePart.replace(/_/g, ' ');
     }
     
     // 解析微信JSON文件（与Python版 parse_cleaned_json 对齐）
@@ -1299,28 +1300,6 @@ function preExtractStructuredData(messages) {
 
 // ==================== 方向验证采样检查 ====================
 // 分析前随机抽样20条消息，检查【我】标签是否准确
-// 如果超过3条标错，说明导出工具方向逻辑有bug
-function verifyMessageDirection(messages, sampleSize = 20) {
-    const myMsgs = messages.filter(m => m.is_me || m.sender === 'me' || m.sender === 'self');
-    if (myMsgs.length < 5) return null; // 消息太少不检查
-
-    // 随机抽样
-    const shuffled = [...myMsgs].sort(() => Math.random() - 0.5);
-    const samples = shuffled.slice(0, Math.min(sampleSize, myMsgs.length));
-
-    return {
-        total_my: myMsgs.length,
-        sampled: samples.length,
-        samples: samples.map(m => ({
-            sender: m.sender_name || m.sender || '?',
-            is_me: m.is_me,
-            content: (m.content || '').substring(0, 60),
-            chat_with: m.chat_with || '?',
-            time: m.timestamp ? normalizeTs(m.timestamp) : '?'
-        }))
-    };
-}
-
 
 // ==================== 数据准备（好友过滤 + 经历维度采样） ====================
 function prepareJourneyData(messages, SAFE_CHARS) {
@@ -1431,6 +1410,12 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
 
         // 对每个好友做均匀块采样
         for (const [name, fMsgs] of sortedFriends) {
+            // 先按时间排序，避免跨文件导入导致块内消息乱序
+            fMsgs.sort((a, b) => {
+                const ta = a.timestamp ? (typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime()) : 0;
+                const tb = b.timestamp ? (typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime()) : 0;
+                return ta - tb;
+            });
             const fBudget = friendBudgets.get(name) || 0;
             const monthData = friendMonthlyChars.get(name)?.get(monthKey);
             const msgCount = monthData?.count || 0;
@@ -1439,12 +1424,12 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
             const avgLineLen = Math.max(20, Math.ceil(totalChar / Math.max(1, msgCount)) + 10);
             if (fBudget < avgLineLen * 5) continue;
             const maxCount = Math.max(1, Math.floor(fBudget / avgLineLen));
-            // 每条中心消息带±2邻居共5条，实际中心消息数只有maxCount/5（预留合并开销）
-            const step = Math.max(1, Math.floor(fMsgs.length / Math.max(1, Math.floor(maxCount / 5))));
+            // 每条中心消息带±3邻居共7条，实际中心消息数只有maxCount/7（预留合并开销）
+            const step = Math.max(1, Math.floor(fMsgs.length / Math.max(1, Math.floor(maxCount / 7))));
 
             const blockIdx = new Set();
             for (let i = 0; i < fMsgs.length; i += step) {
-                for (let j = Math.max(0, i - 2); j <= Math.min(fMsgs.length - 1, i + 2); j++) {
+                for (let j = Math.max(0, i - 3); j <= Math.min(fMsgs.length - 1, i + 3); j++) {
                     blockIdx.add(j);
                 }
             }
@@ -1475,70 +1460,35 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
         }
     }
 
-    // 第四步：按年度分组，年度内按好友分组输出（解决多对话交织问题）
-    const yearFriendMap = new Map(); // year → Map(friendName → [blocks])
-    const friendYearlyChars = new Map(); // friendName → Map(year → totalChars)
-
-    for (const [friendName, blocks] of friendBlocks) {
-        for (const block of blocks) {
-            const blockYear = block.time
-                ? new Date(typeof block.time === 'number' ? block.time : block.time).getFullYear().toString()
-                : '未知';
-            if (!yearFriendMap.has(blockYear)) yearFriendMap.set(blockYear, new Map());
-            const fmap = yearFriendMap.get(blockYear);
-            if (!fmap.has(friendName)) fmap.set(friendName, []);
-            fmap.get(friendName).push(block);
-            // 统计该好友在该年的字符数（用于好友排序）
-            if (!friendYearlyChars.has(friendName)) friendYearlyChars.set(friendName, new Map());
-            const yc = friendYearlyChars.get(friendName);
-            yc.set(blockYear, (yc.get(blockYear) || 0) + block.chars);
-        }
-    }
-
-    // 每年内对每个好友的块按时间排序
-    for (const [, fmap] of yearFriendMap) {
-        for (const [, blocks] of fmap) {
-            blocks.sort((a, b) => {
-                const ta = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
-                const tb = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
-                return ta - tb;
-            });
-        }
-    }
-
-    // 按年份升序输出，年份内按好友在该年的字符数降序输出
-    const sortedYears = [...yearFriendMap.keys()].sort((a, b) => {
-        if (a === '未知') return 1;
-        if (b === '未知') return -1;
-        return parseInt(a) - parseInt(b);
-    });
-
+    // 第四步：按好友分组输出，每个好友内按时间排序
     let outputTotalChars = 0;
     const allParts = [];
 
-    for (const year of sortedYears) {
-        // 添加年度分隔标记
-        const yearHeader = `📅 ===== ${year}年 ===== 📅`;
-        if (outputTotalChars + yearHeader.length + 1 > SAFE_CHARS) break;
-        allParts.push(yearHeader);
-        outputTotalChars += yearHeader.length + 1;
+    // 按总字符数降序排列好友（聊得多排前面）
+    const sortedFriends = [...friendBlocks.entries()].sort((a, b) => {
+        const ca = a[1].reduce((s, blk) => s + blk.chars, 0);
+        const cb = b[1].reduce((s, blk) => s + blk.chars, 0);
+        return cb - ca;
+    });
 
-        const fmap = yearFriendMap.get(year);
-        // 按该年字符数降序排列好友
-        const sortedFriends = [...fmap.entries()].sort((a, b) => {
-            const ca = (friendYearlyChars.get(a[0])?.get(year) || 0);
-            const cb = (friendYearlyChars.get(b[0])?.get(year) || 0);
-            return cb - ca;
+    for (const [friendName, blocks] of sortedFriends) {
+        // 每个好友内的块按时间排序
+        blocks.sort((a, b) => {
+            const ta = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
+            const tb = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
+            return ta - tb;
         });
 
-        for (const [friendName, blocks] of sortedFriends) {
-            for (const block of blocks) {
-                const blockText = block.lines.join('\n');
-                if (outputTotalChars + block.chars > SAFE_CHARS) break;
-                allParts.push(blockText);
-                outputTotalChars += block.chars;
-            }
-            if (outputTotalChars >= SAFE_CHARS) break;
+        // 好友分隔标记
+        const friendSep = `--- 与 ${friendName} 的对话 ---`;
+        if (outputTotalChars + friendSep.length + 1 > SAFE_CHARS) break;
+        allParts.push(friendSep);
+        outputTotalChars += friendSep.length + 1;
+
+        for (const block of blocks) {
+            if (outputTotalChars + block.chars > SAFE_CHARS) break;
+            allParts.push(block.lines.join('\n'));
+            outputTotalChars += block.chars;
         }
         if (outputTotalChars >= SAFE_CHARS) break;
     }
@@ -1546,7 +1496,7 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
     return allParts.join('\n\n');
 }
 
-// ========== 通用：构建消息行文本（含对话上下文） ==========
+// ========== 通用：构建消息行文本 ==========
 function _buildMsgLine(m) {
     const isMe = m.sender === 'me' || m.sender === 'self' || m.is_me;
     const sender = isMe ? '【我】' : `【${m.sender_name || '对方'}】`;
@@ -1554,10 +1504,6 @@ function _buildMsgLine(m) {
     let content = (m.content || '').replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
     const parts = [];
     if (ts) parts.push(`[${ts}]`);
-    // 标注对话对象，防止不同聊天交织时AI混淆
-    if (m.chat_with && m.chat_with !== '未知') {
-        parts.push(`[跟${m.chat_with}聊]`);
-    }
     parts.push(sender);
     return `${parts.join('')}: ${content}`;
 }
@@ -1584,28 +1530,18 @@ class GuanjiAnalyzer {
         this.log('  📚 经历数据准备中...', 'info');
         onProgress(1, 2, '准备经历数据...');
         const journeyData = window._journeyData || prepareJourneyData(this.messages, maxChars);
-        let input = journeyData;
-        if (input.length > maxChars) input = input.substring(0, maxChars);
-        this.log(`  📚 经历数据准备完成: ${input.length.toLocaleString()} 字符`, 'info');
+        this.log(`  📚 经历数据准备完成: ${journeyData.length.toLocaleString()} 字符`, 'info');
 
         this.log('AI经历分析中...', 'info');
         onProgress(2, 2, 'AI正在生成你的人生叙事...');
 
-        // 单次AI调用，带重试
+        // 两步分析：先按好友分析，再按时间排序
         let result = null;
-        for (let attempt = 0; attempt <= 1; attempt++) {
-            try {
-                result = await this._analyzeJourney(input);
-                break;
-            } catch (err) {
-                if (attempt < 1) {
-                    this.log(`[RETRY] 经历分析失败，5s后重试: ${err.message}`, 'warning');
-                    await new Promise(r => setTimeout(r, 5000));
-                } else {
-                    this.log(`[ERROR] 经历分析最终失败: ${err.message}`, 'error');
-                    result = `（分析失败: ${err.message}）`;
-                }
-            }
+        try {
+            result = await this._analyzeJourney(journeyData);
+        } catch (err) {
+            this.log(`[ERROR] 经历分析失败: ${err.message}`, 'error');
+            result = `（分析失败: ${err.message}）`;
         }
 
         // 清理AI输出中的废话和真名泄露
@@ -1637,20 +1573,49 @@ class GuanjiAnalyzer {
     }
 
     async _analyzeJourney(chatData) {
-        const prompt = `请用第一人称"我"，用以下我的聊天记录生成一篇我的人生经历。
+        // 第一步：按好友分析
+        const step1Prompt = `请根据以下聊天记录，按好友分章节以时间顺序梳理我与好友的经历（注意聊天记录是两个人的对话，其中出现的内容不代表已经发生的），每个好友的经历都要标注时间范围（年份或月份）。
 
-现在发给你的数据，是从我的微信/QQ聊天记录中提取和采样得到的，数据经过以下处理：
+下面发给你的聊天记录，不是完整的聊天记录，是将我的微信/QQ聊天记录经过以下处理过程得到的，
 
-1. **数据清洗**：原始聊天记录中的图片、语音、视频、红包、文件等媒体标记消息被过滤，通话记录、撤回提示等系统消息也被过滤，只保留真实的文字对话内容。
+1. **数据清洗**：图片、语音、视频、红包等媒体消息和系统通知已被过滤，只保留文字对话。
+2. **分层采样**：由于原始数据量远超上下文限制，按月份和聊天对象分层采样。对每个好友的消息做均匀时间采样，每条被选中的消息携带前后各 3 条邻居消息合并成对话块，以保留上下文完整性。块与块之间用空行分隔，块与块之间时间不是连续的。
 
-2. **分层采样**：由于原始数据量远超 AI 的上下文限制，需要对数据进行采样。采样策略是按月份和聊天对象分层分配的——每个月的预算根据该月消息内容的总字符数占所有月份总字符数的比例来分配（字符数多的月份拿到更多预算，但最少保底 500 字），每月内再按聊天对象的字符数比例分配到每个好友。对每个好友的消息做均匀时间采样，每条被选中的消息会携带前后各 2 条邻居消息并合并成对话块（块与块之间不是连续的消息，块与块之间用空行分隔），以保留对话的上下文和连贯性。
+3. 数据按聊天对象分组，用 --- 与 xxx 的对话 --- 的标记分隔每个好友，每个好友的对话块内按时间排列，上一个对话块与下一个对话块不是连续的对话。
 
-3. **分组结构**：数据按年度分组，每年用 📅 ===== 2024年 ===== 📅 这样的标记分隔。每年内按聊天对象分组，同一个人的对话块连续排列，不会被插断。所以你可以完整地追踪每一年和每个人的关系发展脉络。每行标注了【跟xxx聊】，表明这句话是和谁在对话。
-
-以下聊天记录：
+以下是聊天记录：
 ${chatData}
-按上述格式输出。`;
-        return this.ai.ask(prompt, { temperature: 0.4, maxTokens: 200000 });
+按上述要求输出，不要任何开场白和解释，直接输出内容。`;
+
+        this.log('  📝 第一步：AI按好友分析各段关系...', 'info');
+        const step1Result = await this.ai.ask(step1Prompt, { temperature: 0.4 });
+        console.log('===== 第一步：按好友分析结果 =====');
+        console.log(step1Result);
+
+        // 第二步：按时间顺序重新整理（只排序，不润色）
+        this.log('  📝 第二步：按时间顺序重新整理各好友经历...', 'info');
+        const step2Prompt = `以下是我与各个聊天好友的经历，请将内容按时间顺序重新排列，不要改变内容，不要概括、不要精简、不要改写，保持原文完整。排列后标明每段内容是与哪个好友的。
+
+${step1Result}
+
+按上述要求输出，不要任何开场白和解释，直接输出内容。`;
+
+        const step2Result = await this.ai.ask(step2Prompt, { temperature: 0.1 });
+        console.log('===== 第二步：按时间排序结果 =====');
+        console.log(step2Result);
+
+        // 第三步：用第一人称润色成人生经历
+        this.log('  📝 第三步：将排序后的内容润色成人生经历...', 'info');
+        const step3Prompt = `以下是我按时间顺序整理的与各个聊天好友的经历，请用第一人称"我"将这些内容写成一篇我的人生经历。
+
+${step2Result}
+
+按上述要求输出，不要任何开场白和解释，直接输出内容。`;
+
+        const step3Result = await this.ai.ask(step3Prompt, { temperature: 0.4 });
+        console.log('===== 第三步：润色结果 =====');
+        console.log(step3Result);
+        return step3Result;
     }
 }
 
@@ -1725,40 +1690,28 @@ const AIEngine = {
         }
         this._analyzer.log(`[OK] 使用内存数据: ${messages.length.toLocaleString()} 条消息, 共 ${chatTextLen.toLocaleString()} 字符`, 'success');
 
-        // === 方向验证采样检查 ===
-        const dirCheck = verifyMessageDirection(messages, 20);
-        if (dirCheck) {
-            this._analyzer.log(`[方向检查] 随机抽查 ${dirCheck.sampled} 条标注为【我】的消息：`, 'info');
-            const examples = dirCheck.samples.slice(0, 5);
-            for (const s of examples) {
-                this._analyzer.log(`  - [${s.time}] 【${s.sender}】: ${s.content}`, 'info');
-            }
-            if (dirCheck.sampled > 5) {
-                this._analyzer.log(`  ... 共 ${dirCheck.sampled} 条样本（详细请查看数据可视化）`, 'info');
-            }
-        }
-
         // 提取硬事实
-        this._analyzer.log('[1/4] 代码层结构化提取中...', 'info');
         const structuredData = preExtractStructuredData(messages);
         
-        this._analyzer.log('[OK] 结构化提取完成:', 'success');
-        this._analyzer.log(`  - 时间范围: ${structuredData.time_range[0]} ~ ${structuredData.time_range[1]}`, 'info');
-        this._analyzer.log(`  - 聊天对象: ${structuredData.chat_count}个`, 'info');
-        const yearDist = Object.entries(structuredData.year_distribution).map(([y, c]) => `${y}:${c}`).join(', ');
-        this._analyzer.log(`  - 年度分布: {${yearDist}}`, 'info');
-        this._analyzer.log(`  - 数据策略: Top200好友+长期关系保护 → 按字符数比例分配预算 + 均匀块采样`, 'info');
-
-        this._analyzer.log(`[INFO] 单维度分析模式：AI读取完整经历叙事，从中理解你的一切`, 'info');
+        this._analyzer.log(`[INFO] 三步分析模式：按好友分析 → 时间排序 → 润色成人生经历`, 'info');
 
         // 传给分析器
         this._analyzer.setData(messages);
 
+        this._analyzer.log('[1/3] 第一步：按好友分析各段关系...', 'info');
+        if (onProgress) onProgress('第一步：按好友分析各段关系...', 20);
+
         const result = await this._analyzer.analyze({
             onProgress: (step, total, msg) => {
-                if (onProgress) onProgress(msg, Math.round((step / total) * 90));
+                if (onProgress) onProgress(msg, 20 + Math.round((step / total) * 60));
             }
         });
+
+        this._analyzer.log('[2/3] 第二步：按时间顺序重新整理...', 'info');
+        if (onProgress) onProgress('第二步：按时间顺序重新整理...', 50);
+
+        this._analyzer.log('[3/3] 第三步：润色成人生经历...', 'info');
+        if (onProgress) onProgress('第三步：润色成人生经历...', 80);
         
         // 附加结构化数据供情绪图表使用
         result.structured = structuredData;
