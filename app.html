@@ -1574,45 +1574,44 @@ class GuanjiAnalyzer {
 
     async _analyzeJourney(chatData) {
         // 第一步：按好友分析
-        const step1Prompt = `请根据以下聊天记录，按好友分章节以时间顺序梳理我与好友的经历（注意聊天记录是两个人的对话，其中出现的内容不代表已经发生的），每个好友的经历都要标注时间范围（年份或月份）。
+        const step1Prompt = `请根据以下聊天记录，用第一人称"我"按好友分章节分析我与好友的经历（注意聊天记录是两个人的对话，其中出现的内容不代表已经发生的），按时间顺序输出，只输出经历，不输出总结，不输出开场白和解释。
 
 下面发给你的聊天记录，不是完整的聊天记录，是将我的微信/QQ聊天记录经过以下处理过程得到的，
 
 1. **数据清洗**：图片、语音、视频、红包等媒体消息和系统通知已被过滤，只保留文字对话。
 2. **分层采样**：由于原始数据量远超上下文限制，按月份和聊天对象分层采样。对每个好友的消息做均匀时间采样，每条被选中的消息携带前后各 3 条邻居消息合并成对话块，以保留上下文完整性。块与块之间用空行分隔，块与块之间时间不是连续的。
 
-3. 数据按聊天对象分组，用 --- 与 xxx 的对话 --- 的标记分隔每个好友，每个好友的对话块内按时间排列，上一个对话块与下一个对话块不是连续的对话。
+3. 数据按聊天对象分组，用 --- 与 xxx 的对话 --- 的标记分隔每个好友，每个好友的对话块内的消息是连续的，上一个对话块与下一个对话块的消息不是连续的。
 
 以下是聊天记录：
-${chatData}
-按上述要求输出，不要任何开场白和解释，直接输出内容。`;
+${chatData}`;
 
         this.log('  📝 第一步：AI按好友分析各段关系...', 'info');
-        const step1Result = await this.ai.ask(step1Prompt, { temperature: 0.4 });
+        let step1Result = await this.ai.ask(step1Prompt, { temperature: 0.4, maxTokens: 240000 });
         console.log('===== 第一步：按好友分析结果 =====');
         console.log(step1Result);
 
         // 第二步：按时间顺序重新整理（只排序，不润色）
         this.log('  📝 第二步：按时间顺序重新整理各好友经历...', 'info');
-        const step2Prompt = `以下是我与各个聊天好友的经历，请将内容按时间顺序重新排列，不要改变内容，不要概括、不要精简、不要改写，保持原文完整。排列后标明每段内容是与哪个好友的。
+        const step2Prompt = `以下是我按时间顺序整理的与各个好友的经历，请将以下内容完整的按时间顺序重新排列，不同好友中相同的时间区域进行合并，内容按原样输出不进行分析，排列后每段内容标明是与哪个好友的。
 
 ${step1Result}
 
-按上述要求输出，不要任何开场白和解释，直接输出内容。`;
+严格禁止输出任何开场白和解释`;
 
-        const step2Result = await this.ai.ask(step2Prompt, { temperature: 0.1 });
+        const step2Result = await this.ai.ask(step2Prompt, { temperature: 0.1, maxTokens: 240000 });
         console.log('===== 第二步：按时间排序结果 =====');
         console.log(step2Result);
 
         // 第三步：用第一人称润色成人生经历
         this.log('  📝 第三步：将排序后的内容润色成人生经历...', 'info');
-        const step3Prompt = `以下是我按时间顺序整理的与各个聊天好友的经历，请用第一人称"我"将这些内容写成一篇我的人生经历。
+        const step3Prompt = `以下是我按时间顺序整理的与各个好友的经历，每段内容都标明了好友名称，请用第一人称"我"将这些内容写成一篇我的人生经历。
 
 ${step2Result}
 
-按上述要求输出，不要任何开场白和解释，直接输出内容。`;
+严格禁止输出任何开场白和解释`;
 
-        const step3Result = await this.ai.ask(step3Prompt, { temperature: 0.4 });
+        const step3Result = await this.ai.ask(step3Prompt, { temperature: 0.4, maxTokens: 240000 });
         console.log('===== 第三步：润色结果 =====');
         console.log(step3Result);
         return step3Result;
