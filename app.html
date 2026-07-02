@@ -1584,7 +1584,7 @@ class GuanjiAnalyzer {
 以下是聊天记录：
 ${chatData}
 
-请根据聊天记录，按好友分章节分析我的经历，按时间顺序输出，不输出开场白和解释。`;
+请根据聊天记录，按好友分章节，分析我的经历，好友章节中按时间顺序输出，不输出开场白和解释。`;
 
         this.log('  📝 第一步：AI按好友分析各段关系...', 'info');
         let step1Result = await this.ai.ask(step1Prompt, { temperature: 0.4, maxTokens: 240000 });
