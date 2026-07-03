@@ -972,7 +972,7 @@ function revealCard(cardElement) {
 }
 
 // ==================== 7. AI 调用 ====================
-function buildPrompt(question, cards, profile) {
+function buildMessages(question, cards, profile) {
 
     const cardsText = cards.map(c => {
         const rev = c.reversed ? '（逆位）' : '（正位）';
@@ -990,21 +990,22 @@ function buildPrompt(question, cards, profile) {
 - 人生阶段：${optionTexts.timing[profile.timing] || '未知'}
 - 觉知程度：${optionTexts.awareness[profile.awareness] || '未知'}`;
 
-    return `以下是用户提出的问题，用户当前命运画像，用户抽取的塔罗牌牌面。
-用户的问题是：${question}
+    const hasReport = !!importedReport;
 
-【用户当前命运画像】
-通过三个问题由用户自己选择描绘的当前状态（能量/阶段/觉知），并非客观测量，而是用户当下的自我感知。目的是让占卜能结合用户自己认为的处境来解读，而不是完全凭空猜测。
-${profileText}
+    const messages = [
+        { role: 'system', content: `你是占卜师，下面是用户提出的问题，用户自己选择的命运画像，用户自己抽中的塔罗牌牌面${hasReport ? '，用户的人生经历' : ''}` },
+        { role: 'user', content: `【用户提出的问题】${question}` },
+        { role: 'user', content: `【用户选择的命运画像】\n${profileText}` },
+        { role: 'user', content: `【用户抽中的塔罗牌面】\n${cardsText}` }
+    ];
 
-【塔罗牌（三牌阵：过去、现在、未来）】
-三张牌是从 22 张大阿尔卡那中随机抽取的，每张牌有 50% 概率逆位。随机性代表命运的未知，牌面的象征意义是你解读的切入点。
-${cardsText}
-注意：逆位不代表"坏"，而是表示该牌的能量受到阻碍、需要内省、或者事情在延迟。
+    if (hasReport) {
+        messages.push({ role: 'user', content: `【用户的人生经历】\n${importedReport}` });
+    }
 
-${importedReport ? `【用户的人生经历】\n以下内容是用户从自己的聊天记录中提取的真实经历。提供这些信息是为了让你能结合用户真实的过往去理解ta，让占卜更贴合实际，而不是空泛地解读。\n${importedReport}` : '【用户的人生经历】（本次未提供）'}
+    messages.push({ role: 'system', content: '通过以上内容，解答用户提出的问题并给出占卜结果和行动建议。' });
 
-你是占卜师，你的使命是结合用户当前命运画像和塔罗的随机性根据用户提出的问题为用户做一次占卜并给出明确的占卜结果和行动建议。`;
+    return messages;
 }
 
 async function getAIReading() {
@@ -1014,10 +1015,10 @@ async function getAIReading() {
         position: i === 0 ? '过去' : i === 1 ? '现在' : '未来'
     }));
 
-    const prompt = buildPrompt(userQuestion, cards, fateProfile);
+    const messages = buildMessages(userQuestion, cards, fateProfile);
 
     try {
-        const reading = await callAI(prompt);
+        const reading = await callAI(messages);
         displayReading(reading, cards);
     } catch (error) {
         document.getElementById('readingLoading').classList.add('hidden');
@@ -1032,7 +1033,7 @@ async function getAIReading() {
     }
 }
 
-async function callAI(prompt) {
+async function callAI(messages) {
     const modelConfig = AI_MODELS[selectedModel];
     if (!modelConfig) throw new Error('未选择有效的AI模型');
     const effectiveKey = document.getElementById('apiKeyInput').value.trim() || Storage.getItem('tarot_api_key');
@@ -1048,9 +1049,7 @@ async function callAI(prompt) {
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveKey}` },
                 body: JSON.stringify({
                     model: modelConfig.model,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.8,
-                    max_tokens: 2000
+                    messages: messages
                 }),
                 signal: controller.signal
             });

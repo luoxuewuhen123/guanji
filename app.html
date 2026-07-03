@@ -910,8 +910,8 @@ class ChatParser {
             }
             
             // 续行内容
-            // 检查续行是否为系统消息（包括带时间戳的: [时间] --- xxx ---）
-            if (this.cleaner.is_system_message(line)) {
+            // 检查续行是否为纯系统分隔线（---, ===, ***），避免将含关键字的对话内容误判
+            if (/^\s*(---|===|\*\*\*)\s*$/.test(line)) {
                 if (currentMsg && this.cleaner.is_valid_message(currentMsg.content)) {
                     messages.push(currentMsg);
                 }
@@ -1008,8 +1008,8 @@ class ChatParser {
             }
             
             // 续行
-            // 检查续行是否为系统消息（与Python版QQParser对齐）
-            if (this.cleaner.is_system_message(line)) {
+            // 检查续行是否为纯系统分隔线（---, ===, ***），避免将含关键字的对话内容误判
+            if (/^\s*(---|===|\*\*\*)\s*$/.test(line)) {
                 if (currentMsg && this.cleaner.is_valid_message(currentMsg.content)) {
                     messages.push(currentMsg);
                 }
@@ -1077,8 +1077,9 @@ class ChatParser {
             if (!isNaN(ts)) {
                 return ts > 1e12 ? ts : ts * 1000;
             }
-        } catch(e) {}
-        return null;
+        } catch(e) {
+            console.warn('时间戳解析异常', e);
+        }
     }
 
 
@@ -1299,10 +1300,10 @@ function preExtractStructuredData(messages) {
 
 
 // ==================== 方向验证采样检查 ====================
-// 分析前随机抽样20条消息，检查【我】标签是否准确
 
 // ==================== 数据准备（好友过滤 + 经历维度采样） ====================
-function prepareJourneyData(messages, SAFE_CHARS) {
+function prepareJourneyData(messages, SAFE_CHARS, forcedNames) {
+    const forced = forcedNames || (typeof forcedFriendNames !== 'undefined' ? forcedFriendNames : new Set());
     // 好友过滤（Top200 + 时间跨度>6个月 + 强制保留）
     const friendStats = new Map();
     for (const m of messages) {
@@ -1322,7 +1323,7 @@ function prepareJourneyData(messages, SAFE_CHARS) {
     for (let i = 0; i < sortedFriends.length; i++) {
         const [cw, stat] = sortedFriends[i];
         if (stat.tsSuccess === 0 && stat.tsFail > 0) { keptFriends.add(cw); continue; }
-        if (forcedFriendNames && forcedFriendNames.has(cw)) { keptFriends.add(cw); continue; }
+        if (forced.has(cw)) { keptFriends.add(cw); continue; }
         if (i < TOP_FRIEND_COUNT) { keptFriends.add(cw); continue; }
         if (stat.maxTs - stat.minTs > SIX_MONTH_MS) keptFriends.add(cw);
     }
@@ -1460,9 +1461,9 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
         }
     }
 
-    // 第四步：按好友分组输出，每个好友内按时间排序
+    // 第四步：按好友分组输出，每个好友独立成块（返回数组，每个元素是一个好友的全部对话）
     let outputTotalChars = 0;
-    const allParts = [];
+    const friendBlocksOutput = [];
 
     // 按总字符数降序排列好友（聊得多排前面）
     const sortedFriends = [...friendBlocks.entries()].sort((a, b) => {
@@ -1482,30 +1483,31 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
         // 好友分隔标记
         const friendSep = `--- 与 ${friendName} 的对话 ---`;
         if (outputTotalChars + friendSep.length + 1 > SAFE_CHARS) break;
-        allParts.push(friendSep);
+        const blockParts = [friendSep];
         outputTotalChars += friendSep.length + 1;
 
         for (const block of blocks) {
             if (outputTotalChars + block.chars > SAFE_CHARS) break;
-            allParts.push(block.lines.join('\n'));
+            blockParts.push(block.lines.join('\n'));
             outputTotalChars += block.chars;
         }
+        friendBlocksOutput.push(blockParts.join('\n\n'));
         if (outputTotalChars >= SAFE_CHARS) break;
     }
 
-    return allParts.join('\n\n');
+    return friendBlocksOutput;
 }
 
 // ========== 通用：构建消息行文本 ==========
 function _buildMsgLine(m) {
     const isMe = m.sender === 'me' || m.sender === 'self' || m.is_me;
-    const sender = isMe ? '【我】' : `【${m.sender_name || '对方'}】`;
+    const sender = isMe ? '我' : '好友';
     const ts = normalizeTs(m.timestamp);
     let content = (m.content || '').replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
     const parts = [];
     if (ts) parts.push(`[${ts}]`);
     parts.push(sender);
-    return `${parts.join('')}: ${content}`;
+    return `${parts.join(' ')}：${content}`;
 }
 
 
@@ -1530,12 +1532,13 @@ class GuanjiAnalyzer {
         this.log('  📚 经历数据准备中...', 'info');
         onProgress(1, 2, '准备经历数据...');
         const journeyData = window._journeyData || prepareJourneyData(this.messages, maxChars);
-        this.log(`  📚 经历数据准备完成: ${journeyData.length.toLocaleString()} 字符`, 'info');
+        const totalChars = Array.isArray(journeyData) ? journeyData.reduce((s, b) => s + b.length, 0) : journeyData.length;
+        this.log(`  📚 经历数据准备完成: ${totalChars.toLocaleString()} 字符，${journeyData.length} 个好友块`, 'info');
 
         this.log('AI经历分析中...', 'info');
         onProgress(2, 2, 'AI正在生成你的人生叙事...');
 
-        // 两步分析：先按好友分析，再按时间排序
+        // 三步分析：按好友分析 → 时间排序 → 润色成人生经历
         let result = null;
         try {
             result = await this._analyzeJourney(journeyData);
@@ -1553,8 +1556,9 @@ class GuanjiAnalyzer {
 
         let cleaned = text;
 
-        // 去开场白：AI有时会在正文前加一段废话，删掉第一个标题之前的内容中符合开场白特征的行
-        const firstHeading = cleaned.search(/\n#{2,3} /);
+        // 去开场白：AI有时会在正文前加一段废话
+        // 找到第一个类Markdown标题（## 或 ###），兼容开头即为标题的情况
+        const firstHeading = cleaned.search(/(?:^|\n)#{2,3} /);
         if (firstHeading > 0) {
             const beforeHeading = cleaned.substring(0, firstHeading);
             const meaningfulLines = beforeHeading.split('\n').filter(line => {
@@ -1565,7 +1569,9 @@ class GuanjiAnalyzer {
                 if (/(分析师|分析专家|我将严格|遵循你的要求|我将为您|我已仔细|根据您提供|根据你提供|我已经仔细|读完|遵照您的指示|我是.*?叙事者|我是.*?分析者|让我根据你)/.test(trimmed)) return false;
                 return true;
             });
-            cleaned = meaningfulLines.join('\n') + cleaned.substring(firstHeading);
+            // 如果标题前没有有效内容，直接取标题及之后的内容
+            const meaningful = meaningfulLines.join('\n').trim();
+            cleaned = meaningful ? meaningful + '\n' + cleaned.substring(firstHeading) : cleaned.substring(firstHeading);
         }
         cleaned = cleaned.replace(/^\n+/, '').replace(/^---\s*\n*/, '');
 
@@ -1573,46 +1579,36 @@ class GuanjiAnalyzer {
     }
 
     async _analyzeJourney(chatData) {
-        // 第一步：按好友分析
-        const step1Prompt = `下面发给你的是我的部分微信/QQ的聊天记录，是将我的所有聊天记录经过以下处理过程得到的(注意聊天记录是我和好友的对话，其中出现的内容不代表已经发生的)
+        // 第一步：分析聊天记录（每个好友一个独立 user 消息，让 AI 更好区分）
+        const step1SystemPrompt = `下面发给你的是我的微信/QQ的聊天记录的对话块，同好友中块内的消息是连续的，块与块之间的消息不是连续的。`;
 
-1. **数据清洗**：图片、语音、视频、红包等媒体消息和系统通知已被过滤，只保留文字对话。
-2. **分层采样**：由于原始数据量远超上下文限制，按月份和聊天对象分层采样。对每个好友的消息做均匀时间采样，每条被选中的消息携带前后各 3 条邻居消息合并成对话块，以保留上下文完整性。块与块之间用空行分隔，块与块之间时间不是连续的。
+        const step1Instruction = `请根据聊天记录，分析我的人生经历，不输出开场白和解释。`;
 
-3. 数据按聊天对象分组，每个好友的对话块内的消息是连续的，上一个对话块与下一个对话块的消息不是连续的。
+        // 每个好友的聊天数据作为独立的 user 消息
+        const userMessages = (Array.isArray(chatData) ? chatData : [chatData]).map(content => ({
+            role: 'user',
+            content: content
+        }));
 
-以下是聊天记录：
-${chatData}
-
-请根据聊天记录，按好友分章节，分析我的经历，好友章节中按时间顺序输出，不输出开场白和解释。`;
-
-        this.log('  📝 第一步：AI按好友分析各段关系...', 'info');
-        let step1Result = await this.ai.ask(step1Prompt, { temperature: 0.4, maxTokens: 240000 });
-        console.log('===== 第一步：按好友分析结果 =====');
+        this.log(`  📝 第一步：AI分析聊天记录（${userMessages.length} 个好友块）...`, 'info');
+        let step1Result = await this.ai.chat([
+            { role: 'system', content: step1SystemPrompt },
+            ...userMessages,
+            { role: 'system', content: step1Instruction }
+        ], { maxTokens: 240000 });
+        console.log('===== 第一步：分析结果 =====');
         console.log(step1Result);
 
-        // 第二步：按时间顺序重新整理（只排序，不润色）
-        this.log('  📝 第二步：按时间顺序重新整理各好友经历...', 'info');
-        const step2Prompt = `以下是我按时间顺序整理的与各个好友的经历
-${step1Result}
-
-请将以上内容完整的按时间顺序重新排列，不同好友中相同的时间区域进行合并，内容按原样输出不进行分析，排列后每段内容标明是与哪个好友的，不输出开场白和解释。`;
-
-        const step2Result = await this.ai.ask(step2Prompt, { temperature: 0.1, maxTokens: 240000 });
-        console.log('===== 第二步：按时间排序结果 =====');
+        // 第二步：整理成回忆录式人生经历
+        this.log('  📝 第二步：AI整理成回忆录...', 'info');
+        const step2Result = await this.ai.chat([
+            { role: 'system', content: '以下是我的人生经历' },
+            { role: 'user', content: step1Result },
+            { role: 'system', content: '按第一人称的格式整理成一篇回忆录式人生经历，不输出开场白和解释。' }
+        ], { maxTokens: 240000 });
+        console.log('===== 第二步：整理结果 =====');
         console.log(step2Result);
-
-        // 第三步：用第一人称润色成人生经历
-        this.log('  📝 第三步：将排序后的内容润色成人生经历...', 'info');
-        const step3Prompt = `以下是我按时间顺序整理的与各个好友的经历，每段内容都标明了好友名称
-
-${step2Result}
-请用第一人称"我"将这些内容写成一篇回忆录式的人生经历，不输出开场白和解释。`;
-
-        const step3Result = await this.ai.ask(step3Prompt, { temperature: 0.4, maxTokens: 240000 });
-        console.log('===== 第三步：润色结果 =====');
-        console.log(step3Result);
-        return step3Result;
+        return step2Result;
     }
 }
 
@@ -1690,13 +1686,13 @@ const AIEngine = {
         // 提取硬事实
         const structuredData = preExtractStructuredData(messages);
         
-        this._analyzer.log(`[INFO] 三步分析模式：按好友分析 → 时间排序 → 润色成人生经历`, 'info');
+        this._analyzer.log(`[INFO] 两步分析模式：分析聊天记录 → 整理成回忆录`, 'info');
 
         // 传给分析器
         this._analyzer.setData(messages);
 
-        this._analyzer.log('[1/3] 第一步：按好友分析各段关系...', 'info');
-        if (onProgress) onProgress('第一步：按好友分析各段关系...', 20);
+        this._analyzer.log('[1/2] 第一步：AI分析聊天记录...', 'info');
+        if (onProgress) onProgress('第一步：AI分析聊天记录...', 20);
 
         const result = await this._analyzer.analyze({
             onProgress: (step, total, msg) => {
@@ -1704,11 +1700,8 @@ const AIEngine = {
             }
         });
 
-        this._analyzer.log('[2/3] 第二步：按时间顺序重新整理...', 'info');
-        if (onProgress) onProgress('第二步：按时间顺序重新整理...', 50);
-
-        this._analyzer.log('[3/3] 第三步：润色成人生经历...', 'info');
-        if (onProgress) onProgress('第三步：润色成人生经历...', 80);
+        this._analyzer.log('[2/2] 第二步：AI整理成回忆录...', 'info');
+        if (onProgress) onProgress('第二步：AI整理成回忆录...', 80);
         
         // 附加结构化数据供情绪图表使用
         result.structured = structuredData;
@@ -2139,7 +2132,7 @@ function renderFriendsProtection(limit = 50) {
         if (showStatus) statusTag = forced ? '<span style="color:#00cec9;font-size:10px;">✓已保留</span>' : '<span style="color:#ff6b6b;font-size:10px;">将被丢弃</span>';
 
         return '<label style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.04);cursor:pointer;font-size:12px;' + (forced ? 'background:rgba(0,206,201,0.12);border:1px solid rgba(0,206,201,0.3);' : '') + '" title="' + f.name + '">' +
-            '<input type="checkbox" onchange="toggleForcedFriend(\'' + (f.name||'').replace(/'/g, "\\'") + '\', this.checked)" ' + (forced ? 'checked' : '') + ' style="accent-color:var(--success);cursor:pointer;">' +
+            '<input type="checkbox" onchange="toggleForcedFriend(\'' + (f.name||'').replace(/'/g, "\\'") + '\', this.checked, this)" ' + (forced ? 'checked' : '') + ' style="accent-color:var(--success);cursor:pointer;">' +
             '<span style="font-size:13px;">' + icon + '</span>' +
             '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + f.name + '</span>' +
             (statusTag ? statusTag : '') +
@@ -2221,25 +2214,51 @@ function filterFriends(query) {
 let friendsExpanded = false;
 function expandFriendsList() {
     friendsExpanded = !friendsExpanded;
-    renderFriendsProtection(friendsExpanded ? 999 : 50);
+    const limit = friendsExpanded ? 999 : 50;
+    renderFriendsProtection(limit);
 }
 
 
 // 清除全部选择
 function deselectAllFriends() {
     forcedFriendNames.clear();
+    // 重新生成journeyData
+    if (cleanedData && cleanedData.messages) {
+        window._journeyData = prepareJourneyData(cleanedData.messages, 240000);
+    }
     renderFriendsProtection();
 }
 
-// 切换强制保留好友
-function toggleForcedFriend(name, forced) {
+// 切换强制保留好友（局部更新，避免全量重渲染）
+function toggleForcedFriend(name, forced, checkboxEl) {
     if (forced) {
         forcedFriendNames.add(name);
     } else {
         forcedFriendNames.delete(name);
     }
-    // 重新渲染以更新样式
-    renderFriendsProtection();
+    // 好友保护列表变更后，重新生成journeyData使其生效
+    if (cleanedData && cleanedData.messages) {
+        window._journeyData = prepareJourneyData(cleanedData.messages, 240000);
+    }
+    // 局部更新：只修改当前 checkbox 所在 label 的样式和状态文本
+    if (checkboxEl) {
+        const label = checkboxEl.closest('label');
+        if (label) {
+            if (forced) {
+                label.style.background = 'rgba(0,206,201,0.12)';
+                label.style.border = '1px solid rgba(0,206,201,0.3)';
+            } else {
+                label.style.background = 'rgba(255,255,255,0.04)';
+                label.style.border = 'none';
+            }
+            // 更新状态标签
+            const statusSpan = label.querySelector('span[style*="color"]');
+            if (statusSpan && statusSpan.textContent.includes('将被丢弃') || statusSpan && statusSpan.textContent.includes('已保留')) {
+                statusSpan.textContent = forced ? '✓已保留' : '将被丢弃';
+                statusSpan.style.color = forced ? '#00cec9' : '#ff6b6b';
+            }
+        }
+    }
 }
 
 // ==================== 数据可视化（与Python版 generate_data_viewer 对齐） ====================
@@ -2315,11 +2334,10 @@ function openPreviewWindow() {
         chatBars += `<div class="bar-row"><div class="bar-label" title="${escapeHtml(name)}">${escapeHtml(name)}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%">${count.toLocaleString()}</div></div></div>`;
     }
     
-    // 聊天列表HTML
+    // 聊天列表HTML（dataset绑定事件，避免onclick XSS风险）
     let chatListHtml = '';
     for (const item of chatList) {
-        const safeName = item.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        chatListHtml += `<div class="chat-item" onclick="showChat(this, '${safeName}')"><div class="name">${escapeHtml(item.name)} <span class="badge">${item.count.toLocaleString()}</span></div></div>`;
+        chatListHtml += `<div class="chat-item" data-name="${escapeHtml(item.name)}"><div class="name">${escapeHtml(item.name)} <span class="badge">${item.count.toLocaleString()}</span></div></div>`;
     }
     
     // 时间范围
@@ -2486,8 +2504,7 @@ function renderChatList(filter) {
     const name = item[0];
     const count = item[1];
     if (filter && !name.toLowerCase().includes(filter.toLowerCase())) continue;
-    const safeName = name.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
-    html += '<div class="chat-item" onclick="showChat(this, \\'' + safeName + '\\')"><div class="name">' + name + ' <span class="badge">' + count.toLocaleString() + '</span></div></div>';
+    html += '<div class="chat-item" data-name="' + name.replace(/"/g, '&quot;') + '"><div class="name">' + name + ' <span class="badge">' + count.toLocaleString() + '</span></div></div>';
   }
   list.innerHTML = html || '<div style="padding:15px;color:#666">没有匹配的聊天对象</div>';
 }
@@ -2554,6 +2571,15 @@ function loadMore() {
 renderChatList();
 showOverview();
 
+// 事件代理：聊天列表点击（替代onclick，避免XSS）
+document.getElementById('chatList').addEventListener('click', function(e) {
+    const item = e.target.closest('.chat-item');
+    if (item) {
+        const name = item.dataset.name;
+        if (name) showChat(item, name);
+    }
+});
+
 // Ctrl+S 保存数据可视化页面
 document.addEventListener('keydown', function(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -2596,7 +2622,12 @@ function goToSettings() {
         const savedKey = localStorage.getItem('gj_apiKey');
         const savedModel = localStorage.getItem('gj_apiModel');
         if (savedUrl) document.getElementById('api-url').value = savedUrl;
-        if (savedKey) document.getElementById('api-key').value = savedKey;
+        if (savedKey) {
+            document.getElementById('api-key').value = savedKey;
+            // 有保存的Key时自动勾选"记住"
+            const cb = document.getElementById('remember-api-key');
+            if (cb) cb.checked = true;
+        }
         if (savedModel) {
             // 兼容旧版模型名：deepseek-chat → deepseek-v4-flash
             const upgradedModel = savedModel === 'deepseek-chat' ? 'deepseek-v4-flash' : savedModel;
@@ -2623,18 +2654,14 @@ function renderSamplingResult() {
         return;
     }
     const data = window._journeyData;
-    // 统计【xxx】出现的不同发送者数（不含【我】）
-    const friendSet = new Set();
-    const re = /【([^】]+?)】/g;
-    let m;
-    while ((m = re.exec(data)) !== null) {
-        if (m[1] !== '我') friendSet.add(m[1]);
-    }
-    const friendCount = friendSet.size || 1;
-    let html = `<p style="color:var(--text-dim);font-size:13px;margin-bottom:12px;">共 ${friendCount} 个好友的聊天记录，总 ${data.length.toLocaleString()} 字符</p>`;
+    const blocks = Array.isArray(data) ? data : [data];
+    const totalChars = blocks.reduce((s, b) => s + b.length, 0);
+    const friendCount = blocks.length;
+    let html = `<p style="color:var(--text-dim);font-size:13px;margin-bottom:12px;">共 ${friendCount} 个好友的聊天记录，总 ${totalChars.toLocaleString()} 字符</p>`;
+    const joined = blocks.join('\n\n');
     html += `<div style="background:rgba(0,0,0,0.2);border-radius:12px;padding:16px;max-height:500px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all;">`;
-    html += data.substring(0, 5000);
-    if (data.length > 5000) html += `\n\n...（共 ${data.length.toLocaleString()} 字符，仅显示前 5000 字符）`;
+    html += joined.substring(0, 5000);
+    if (totalChars > 5000) html += `\n\n...（共 ${totalChars.toLocaleString()} 字符，仅显示前 5000 字符）`;
     html += `</div>`;
     el.innerHTML = html;
 }
@@ -2678,11 +2705,16 @@ async function startAnalysis() {
         return;
     }
 
-    // 💾 持久化API设置到localStorage，下次打开自动填充
+    // 💾 持久化API设置到localStorage（仅当用户勾选"记住"时才保存Key）
     try {
         localStorage.setItem('gj_apiUrl', apiUrl);
-        localStorage.setItem('gj_apiKey', apiKey);
         localStorage.setItem('gj_apiModel', apiModel || 'deepseek-v4-flash');
+        const rememberKey = document.getElementById('remember-api-key');
+        if (rememberKey && rememberKey.checked) {
+            localStorage.setItem('gj_apiKey', apiKey);
+        } else {
+            localStorage.removeItem('gj_apiKey');
+        }
     } catch(e) { /* localStorage不可用时静默失败 */ }
 
     document.getElementById('btn-analyze').disabled = true;
@@ -2829,7 +2861,19 @@ function previewFile(type) {
 // 生成情绪晴雨表SVG折线图
 function buildEmotionChart(emotionMonths) {
     const entries = Object.entries(emotionMonths);
-    if (entries.length < 2) return '';
+    if (entries.length === 0) return '';
+    if (entries.length === 1) {
+        // 只有一个月的数据时显示简单数值
+        const [month, data] = entries[0];
+        const label = month.substring(2);
+        return `<div style="margin-bottom:20px;padding:16px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid #2a2a3a;">
+            <div style="font-size:14px;font-weight:600;margin-bottom:8px;">📊 情绪晴雨表</div>
+            <div style="display:flex;gap:20px;justify-content:center;padding:10px 0;">
+                <div><span style="color:#2ecc71;font-size:18px;font-weight:700;">${data.positive}</span> <span style="color:#8b949e;font-size:12px;">正面 (${label})</span></div>
+                <div><span style="color:#e74c3c;font-size:18px;font-weight:700;">${data.negative}</span> <span style="color:#8b949e;font-size:12px;">负面 (${label})</span></div>
+            </div>
+        </div>`;
+    }
     
     const months = entries.map(e => e[0].substring(2)); // "2024-01" → "24-01"
     const positives = entries.map(e => e[1].positive);
@@ -2954,9 +2998,13 @@ async function downloadReportsAsZip() {
 
     try {
         if (!window.JSZip) {
-            const resp = await fetch('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
-            if (!resp.ok) throw new Error('JSZip 加载失败');
-            eval(await resp.text());
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+                script.onload = resolve;
+                script.onerror = () => reject(new Error('JSZip 加载失败'));
+                document.head.appendChild(script);
+            });
         }
         const zip = new JSZip();
         if (personal) {
@@ -2989,7 +3037,7 @@ function buildReportHtml(title, dateStr, content, hasEmotionChart) {
         emotionChartHtml = buildEmotionChart(lastStructuredData.emotion_months);
     }
     const htmlBody = markdownToHtml(content);
-    return '<!DOCTYPE html>\n<html lang="zh-CN"><head><meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>' + title + ' - 观己</title>\n<style>\n* { box-sizing: border-box; margin: 0; padding: 0; }\nbody { font-family: -apple-system, Microsoft YaHei, PingFang SC, sans-serif; background: #0a0a0f; color: #c0c0c0; }\n.header { background: linear-gradient(135deg, #2d1b69, #6c5ce7); color: white; padding: 20px 30px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(108,92,231,0.3); }\n.header h1 { font-size: 20px; font-weight: 600; }\n.header .date { font-size: 13px; opacity: 0.8; }\n.content { max-width: 800px; margin: 30px auto; padding: 0 20px 60px; }\n</style>\n</head><body>\n<div class="header">\n  <h1>' + title + '</h1>\n  <span class="date">' + dateStr + '</span>\n</div>\n<div class="content">\n' + emotionChartHtml + '\n' + htmlBody + '\n</div>\n</body></html>';
+    return '<!DOCTYPE html>\n<html lang="zh-CN"><head><meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>' + title + ' - 观己</title>\n<style>\n* { box-sizing: border-box; margin: 0; padding: 0; }\nbody { font-family: -apple-system, \'Microsoft YaHei\', \'PingFang SC\', sans-serif; background: #0a0a0f; color: #c0c0c0; }\n.header { background: linear-gradient(135deg, #2d1b69, #6c5ce7); color: white; padding: 20px 30px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(108,92,231,0.3); }\n.header h1 { font-size: 20px; font-weight: 600; }\n.header .date { font-size: 13px; opacity: 0.8; }\n.content { max-width: 800px; margin: 30px auto; padding: 0 20px 60px; }\n</style>\n</head><body>\n<div class="header">\n  <h1>' + title + '</h1>\n  <span class="date">' + dateStr + '</span>\n</div>\n<div class="content">\n' + emotionChartHtml + '\n' + htmlBody + '\n</div>\n</body></html>';
 }
 
 // ==================== Ctrl+S 保存预览页面 ====================
@@ -3015,6 +3063,12 @@ function savePreviewAsHtml(type) {
     const title = titles[type] || '观己报告';
     const htmlContent = markdownToHtml(content);
     
+    // 情绪晴雨表（个人阅读报告时添加）
+    let emotionChartHtml = '';
+    if (type === 'personal' && lastStructuredData && lastStructuredData.emotion_months) {
+        emotionChartHtml = buildEmotionChart(lastStructuredData.emotion_months);
+    }
+    
     const now = new Date();
     const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
     
@@ -3038,6 +3092,7 @@ body { font-family: -apple-system, 'Microsoft YaHei', 'PingFang SC', sans-serif;
   <span class="date">${dateStr}</span>
 </div>
 <div class="content">
+${emotionChartHtml}
 ${htmlContent}
 </div>
 </body></html>`;
@@ -3371,6 +3426,9 @@ function markdownToHtml(md) {
                         <div class="form-group" style="margin:0">
                             <label class="form-label">API Key <span style="color:var(--danger)">*</span></label>
                             <input type="password" class="form-input" id="api-key" placeholder="sk-xxxxxxxx（必填）">
+                            <label style="display:flex;align-items:center;gap:4px;margin-top:6px;font-size:12px;color:var(--text-dim);cursor:pointer;">
+                                <input type="checkbox" id="remember-api-key" checked> 记住API Key（下次自动填充）
+                            </label>
                         </div>
                         <div class="form-group" style="margin:0">
                             <label class="form-label">模型名称</label>
