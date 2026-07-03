@@ -1722,31 +1722,14 @@ class ReportGenerator {
     }
 
     async generatePersonalReport(analyses) {
-        const journey = analyses.journey || '（暂无数据）';
-        return `# 🪞 观己 — 个人阅读报告
-
-> **生成时间**：${this.dateStr} | 基于真实聊天记录分析
-
----
-
-## 你的人生经历
-
-${journey}
-
----
-
-*观己 — 观察自己，了解自己*
-`;
+        return analyses.journey || '（暂无数据）';
     }
 
     async generateAIReport(analyses, structuredData) {
         try {
             const journey = analyses.journey || '（暂无数据）';
 
-            return `# 💜 观己 — 灵魂伴侣认知手册
-
-
-你即将读到的内容，是从我的真实聊天记录中提取出来的我的人生经历。
+            return `你即将读到的内容，是从我的真实聊天记录中提取出来的我的人生经历。
 
 ---
 
