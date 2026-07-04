@@ -1121,7 +1121,7 @@ class AIClient {
     async chat(messages, options = {}) {
         if (!this.config || !this.config.apiKey) throw new Error('请先配置API Key');
         if (!this.url) throw new Error('API地址未配置，请在设置页填写API地址，或点击常用配置参考中的模型按钮');
-        const { temperature = 0.7, maxTokens = 8000, model = this.model } = options;
+        const { temperature, maxTokens = 8000, model = this.model } = options;
         
         // 清理所有消息内容中的无效Unicode
         const cleanMessages = messages.map(m => ({
@@ -1157,8 +1157,9 @@ class AIClient {
                     }
                     requestBody = {
                         contents,
-                        generationConfig: { temperature, maxOutputTokens: maxTokens }
+                        generationConfig: { maxOutputTokens: maxTokens }
                     };
+                    if (temperature !== undefined) requestBody.generationConfig.temperature = temperature;
                     // Gemini Auth: key 拼在 URL 里，不带 Authorization 头
                     const sep = fetchUrl.includes('?') ? '&' : '?';
                     fetchUrl += `${sep}key=${encodeURIComponent(this.config.apiKey)}`;
@@ -1167,9 +1168,9 @@ class AIClient {
                     requestBody = {
                         model,
                         messages: cleanMessages,
-                        temperature,
                         max_tokens: maxTokens
                     };
+                    if (temperature !== undefined) requestBody.temperature = temperature;
                     headers['Authorization'] = `Bearer ${this.config.apiKey}`;
                 }
 
@@ -1670,7 +1671,7 @@ const AIEngine = {
                     prevYear = curYear;
                 }
             }
-            const sender = isMe ? '【我】' : `【${msg.sender_name || msg.chat_with || '对方'}】`;
+            const sender = isMe ? '我' : '好友';
             const content = msg.content || '';
             const source = msg.source || '';
             const chatWith = msg.chat_with || '';
@@ -1755,9 +1756,7 @@ ${journey}
 回顾你和我最近的对话，从中提取新发生的重要事情，用第一人称"我"，生成一篇我的人生经历，追加到人生经历末尾作为新章节。`;
         } catch (e) {
             console.error('AI专属报告生成失败', e);
-            return `# 💜 观己 — 灵魂伴侣认知手册
-
-以下内容基于真实聊天记录提取——读完后，用了解我的人的身份对我说话。
+            return `以下内容基于真实聊天记录提取——读完后，用了解我的人的身份对我说话。
 
 ## 我的人生经历
 
