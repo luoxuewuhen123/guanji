@@ -1502,7 +1502,7 @@ function _prepareJourneyData(filteredMsgs, SAFE_CHARS) {
 // ========== 通用：构建消息行文本 ==========
 function _buildMsgLine(m) {
     const isMe = m.sender === 'me' || m.sender === 'self' || m.is_me;
-    const sender = isMe ? '我' : '好友';
+    const sender = isMe ? '我' : (m.sender_name || '对方');
     const ts = normalizeTs(m.timestamp);
     let content = (m.content || '').replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
     const parts = [];
@@ -1667,7 +1667,7 @@ const AIEngine = {
                     prevYear = curYear;
                 }
             }
-            const sender = isMe ? '我' : '好友';
+            const sender = isMe ? '我' : (msg.sender_name || msg.chat_with || '对方');
             const content = msg.content || '';
             const source = msg.source || '';
             const chatWith = msg.chat_with || '';
