@@ -1581,16 +1581,15 @@ class GuanjiAnalyzer {
 
     async _analyzeJourney(chatData) {
         // 第一步：分析聊天记录（所有好友对话合并为一条 system 消息）
-        const step1SystemPrompt = `下面发给你的是我的微信/QQ的聊天记录的对话块，同好友中块内的消息是连续的，块与块之间的消息不是连续的。`;
-
-        const step1Instruction = `请根据聊天记录，分析我的人生经历，不输出开场白和解释。`;
+        const step1DataDesc = `下面发给你的是我的微信/QQ的聊天记录的对话块，同好友中块内的消息是连续的，块与块之间的消息不是连续的。`;
+        const step1Instruction = `请根据聊天记录，整理我的人生经历，不输出开场白和解释。`;
 
         // 所有好友的聊天数据合并为一条 system 消息
         const allChatContent = (Array.isArray(chatData) ? chatData : [chatData]).join('\n\n');
 
         this.log('  📝 第一步：AI分析聊天记录...', 'info');
         let step1Result = await this.ai.chat([
-            { role: 'system', content: step1SystemPrompt },
+            { role: 'system', content: step1DataDesc },
             { role: 'system', content: allChatContent },
             { role: 'system', content: step1Instruction }
         ], { maxTokens: 240000 });
