@@ -993,14 +993,14 @@ function buildMessages(question, cards, profile) {
     const hasReport = !!importedReport;
 
     const messages = [
-        { role: 'system', content: `你是占卜师，下面是用户提出的问题，用户自己选择的命运画像，用户自己抽中的塔罗牌牌面${hasReport ? '，用户的人生经历' : ''}` },
-        { role: 'user', content: `【用户提出的问题】${question}` },
-        { role: 'user', content: `【用户选择的命运画像】\n${profileText}` },
-        { role: 'user', content: `【用户抽中的塔罗牌面】\n${cardsText}` }
+        { role: 'system', content: '你是占卜师' },
+        { role: 'system', content: `【用户提出的问题】${question}` },
+        { role: 'system', content: `【用户自己选择的命运画像】\n${profileText}` },
+        { role: 'system', content: `【用户自己抽中的塔罗牌面】\n${cardsText}` }
     ];
 
     if (hasReport) {
-        messages.push({ role: 'user', content: `【用户的人生经历】\n${importedReport}` });
+        messages.push({ role: 'system', content: `【用户的人生经历】\n${importedReport}` });
     }
 
     messages.push({ role: 'system', content: '通过以上内容，解答用户提出的问题并给出占卜结果和行动建议。' });

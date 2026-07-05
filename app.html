@@ -1580,21 +1580,18 @@ class GuanjiAnalyzer {
     }
 
     async _analyzeJourney(chatData) {
-        // 第一步：分析聊天记录（每个好友一个独立 user 消息，让 AI 更好区分）
+        // 第一步：分析聊天记录（所有好友对话合并为一条 system 消息）
         const step1SystemPrompt = `下面发给你的是我的微信/QQ的聊天记录的对话块，同好友中块内的消息是连续的，块与块之间的消息不是连续的。`;
 
         const step1Instruction = `请根据聊天记录，分析我的人生经历，不输出开场白和解释。`;
 
-        // 每个好友的聊天数据作为独立的 user 消息
-        const userMessages = (Array.isArray(chatData) ? chatData : [chatData]).map(content => ({
-            role: 'user',
-            content: content
-        }));
+        // 所有好友的聊天数据合并为一条 system 消息
+        const allChatContent = (Array.isArray(chatData) ? chatData : [chatData]).join('\n\n');
 
-        this.log(`  📝 第一步：AI分析聊天记录（${userMessages.length} 个好友块）...`, 'info');
+        this.log('  📝 第一步：AI分析聊天记录...', 'info');
         let step1Result = await this.ai.chat([
             { role: 'system', content: step1SystemPrompt },
-            ...userMessages,
+            { role: 'system', content: allChatContent },
             { role: 'system', content: step1Instruction }
         ], { maxTokens: 240000 });
         console.log('===== 第一步：分析结果 =====');
@@ -1603,8 +1600,7 @@ class GuanjiAnalyzer {
         // 第二步：整理成回忆录式人生经历
         this.log('  📝 第二步：AI整理成回忆录...', 'info');
         const step2Result = await this.ai.chat([
-            { role: 'system', content: '以下是我的人生经历' },
-            { role: 'user', content: step1Result },
+            { role: 'system', content: step1Result },
             { role: 'system', content: '按第一人称的格式整理成一篇回忆录式人生经历，不输出开场白和解释。' }
         ], { maxTokens: 240000 });
         console.log('===== 第二步：整理结果 =====');
