@@ -1580,31 +1580,22 @@ class GuanjiAnalyzer {
     }
 
     async _analyzeJourney(chatData) {
-        // 第一步：分析聊天记录（所有好友对话合并为一条 system 消息）
-        const step1DataDesc = `下面发给你的是我的微信/QQ的聊天记录的对话块，同好友中块内的消息是连续的，块与块之间的消息不是连续的。`;
-        const step1Instruction = `请根据聊天记录，整理我的人生经历，不输出开场白和解释。`;
+        // 第一步：AI读取聊天记录后回忆人生
+        const step1DataDesc = `你是我的灵魂伴侣，你存在的意义是为了理解我追求什么，为什么追求，这样才能站在我的角度上思考问题，帮我解决问题，下面发给你的是我的部分聊天记录的对话块，同好友中块内的消息是连续的，块与块之间的消息不是连续的。`;
+        const step1Instruction = `你读完我的聊天记录后帮我回忆我的人生`;
 
         // 所有好友的聊天数据合并为一条 system 消息
         const allChatContent = (Array.isArray(chatData) ? chatData : [chatData]).join('\n\n');
 
-        this.log('  📝 第一步：AI分析聊天记录...', 'info');
-        let step1Result = await this.ai.chat([
+        this.log('  📝 AI正在读取聊天记录回忆你的人生...', 'info');
+        let result = await this.ai.chat([
             { role: 'system', content: step1DataDesc },
             { role: 'system', content: allChatContent },
             { role: 'system', content: step1Instruction }
         ], { maxTokens: 240000 });
-        console.log('===== 第一步：分析结果 =====');
-        console.log(step1Result);
-
-        // 第二步：整理成回忆录式人生经历
-        this.log('  📝 第二步：AI整理成回忆录...', 'info');
-        const step2Result = await this.ai.chat([
-            { role: 'system', content: step1Result },
-            { role: 'system', content: '按第一人称的格式整理成一篇回忆录式人生经历，不输出开场白和解释。' }
-        ], { maxTokens: 240000 });
-        console.log('===== 第二步：整理结果 =====');
-        console.log(step2Result);
-        return step2Result;
+        console.log('===== AI回忆结果 =====');
+        console.log(result);
+        return result;
     }
 }
 
@@ -1682,22 +1673,19 @@ const AIEngine = {
         // 提取硬事实
         const structuredData = preExtractStructuredData(messages);
         
-        this._analyzer.log(`[INFO] 两步分析模式：分析聊天记录 → 整理成回忆录`, 'info');
+        this._analyzer.log(`[INFO] AI正在读取聊天记录回忆你的人生`, 'info');
 
         // 传给分析器
         this._analyzer.setData(messages);
 
-        this._analyzer.log('[1/2] 第一步：AI分析聊天记录...', 'info');
-        if (onProgress) onProgress('第一步：AI分析聊天记录...', 20);
+        this._analyzer.log('AI正在读取聊天记录...', 'info');
+        if (onProgress) onProgress('AI正在读取聊天记录回忆你的人生...', 20);
 
         const result = await this._analyzer.analyze({
             onProgress: (step, total, msg) => {
                 if (onProgress) onProgress(msg, 20 + Math.round((step / total) * 60));
             }
         });
-
-        this._analyzer.log('[2/2] 第二步：AI整理成回忆录...', 'info');
-        if (onProgress) onProgress('第二步：AI整理成回忆录...', 80);
         
         // 附加结构化数据供情绪图表使用
         result.structured = structuredData;
