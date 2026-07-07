@@ -1557,24 +1557,18 @@ class GuanjiAnalyzer {
 
         let cleaned = text;
 
-        // 去开场白：AI有时会在正文前加一段废话
-        // 找到第一个类Markdown标题（## 或 ###），兼容开头即为标题的情况
-        const firstHeading = cleaned.search(/(?:^|\n)#{2,3} /);
-        if (firstHeading > 0) {
-            const beforeHeading = cleaned.substring(0, firstHeading);
-            const meaningfulLines = beforeHeading.split('\n').filter(line => {
-                const trimmed = line.trim();
-                if (!trimmed) return true;
-                if (trimmed.startsWith('#') || trimmed.startsWith('|') || trimmed === '---' || trimmed.startsWith('>')) return true;
-                if (/^(好的|遵照|作为|我将|这是|朋友|没问题|明白了|收到|了解了)/.test(trimmed)) return false;
-                if (/(分析师|分析专家|我将严格|遵循你的要求|我将为您|我已仔细|根据您提供|根据你提供|我已经仔细|读完|遵照您的指示|我是.*?叙事者|我是.*?分析者|让我根据你)/.test(trimmed)) return false;
-                return true;
-            });
-            // 如果标题前没有有效内容，直接取标题及之后的内容
-            const meaningful = meaningfulLines.join('\n').trim();
-            cleaned = meaningful ? meaningful + '\n' + cleaned.substring(firstHeading) : cleaned.substring(firstHeading);
+        // 去开场白：找到第一个 --- 符号，将其及之前的内容全部去掉
+        const firstHr = cleaned.search(/^---\s*$/m);
+        if (firstHr >= 0) {
+            // 从 --- 之后开始截取（跳过 --- 本身和后面的换行）
+            const afterHr = cleaned.indexOf('\n', firstHr);
+            if (afterHr >= 0) {
+                cleaned = cleaned.substring(afterHr + 1);
+            } else {
+                cleaned = '';
+            }
         }
-        cleaned = cleaned.replace(/^\n+/, '').replace(/^---\s*\n*/, '');
+        cleaned = cleaned.replace(/^\n+/, '');
 
         return { journey: cleaned.trim() };
     }
@@ -1582,7 +1576,7 @@ class GuanjiAnalyzer {
     async _analyzeJourney(chatData) {
         // 第一步：AI读取聊天记录后回忆人生
         const step1DataDesc = `你是我的灵魂伴侣，你存在的意义是为了理解我并站在我的角度上思考问题，帮我解决问题，下面发给你的是我的部分聊天记录的对话块，同好友中块内的消息是连续的，块与块之间的消息不是连续的。`;
-        const step1Instruction = `读完我的聊天记录后帮我回忆我的人生`;
+        const step1Instruction = `读完我的聊天记录后站在我的角度上以我的口吻讲述我的人生经历`;
 
         // 所有好友的聊天数据合并为一条 system 消息
         const allChatContent = (Array.isArray(chatData) ? chatData : [chatData]).join('\n\n');
@@ -1593,8 +1587,7 @@ class GuanjiAnalyzer {
             { role: 'system', content: allChatContent },
             { role: 'system', content: step1Instruction }
         ], { maxTokens: 240000 });
-        console.log('===== AI回忆结果 =====');
-        console.log(result);
+
         return result;
     }
 }
