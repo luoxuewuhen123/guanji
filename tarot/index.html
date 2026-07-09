@@ -443,7 +443,7 @@
         <!-- 导入个人阅读报告 -->
         <div class="card" style="padding:15px 20px;text-align:center;">
             <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
-                <span id="reportStatus" style="font-size:0.85em;color:#7f8c8d;">📖 可导入观己个人阅读报告，让AI结合你的经历占卜</span>
+                <span id="reportStatus" style="font-size:0.85em;color:#7f8c8d;">📖 可导入观己人生经历报告，让AI结合你的经历占卜</span>
                 <input type="file" id="reportFileInput" accept=".md" style="display:none;" onchange="importReportFile(event)">
                 <button onclick="document.getElementById('reportFileInput').click()" style="padding:6px 16px;background:rgba(108,92,231,0.2);border:1px solid rgba(108,92,231,0.4);border-radius:8px;color:#a78bfa;cursor:pointer;font-size:0.8em;">📂 导入报告</button>
                 <button id="clearReportBtn" onclick="clearReport()" style="display:none;padding:6px 16px;background:rgba(231,76,60,0.15);border:1px solid rgba(231,76,60,0.3);border-radius:8px;color:#e74c3c;cursor:pointer;font-size:0.8em;">✕ 清除</button>
@@ -1139,7 +1139,7 @@ function importReportFile(event) {
         importedReport = e.target.result.trim();
         Storage.setItem('tarot_imported_report', importedReport);
         updateReportUI();
-        alert('✓ 个人阅读报告已导入！AI将结合你的人生经历进行占卜解读。');
+        alert('✓ 人生经历报告已导入！AI将结合你的人生经历进行占卜解读。');
     };
     reader.readAsText(file, 'UTF-8');
     event.target.value = ''; // 重置 input，允许重复导入同一文件
@@ -1157,10 +1157,10 @@ function updateReportUI() {
     if (!status) return;
     if (importedReport) {
         const preview = importedReport.substring(0, 50).replace(/\n/g, ' ') + '...';
-        status.innerHTML = `📖 已导入个人阅读报告（${preview}）`;
+        status.innerHTML = `📖 已导入人生经历报告（${preview}）`;
         if (clearBtn) clearBtn.style.display = 'inline-block';
     } else {
-        status.innerHTML = '📖 可导入观己个人阅读报告，让AI结合你的经历占卜';
+        status.innerHTML = '📖 可导入观己人生经历报告，让AI结合你的经历占卜';
         if (clearBtn) clearBtn.style.display = 'none';
     }
 }

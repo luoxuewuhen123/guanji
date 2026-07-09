@@ -1689,71 +1689,18 @@ const AIEngine = {
 
 // ==================== ReportGenerator ====================
 class ReportGenerator {
-    constructor() {
-        this.dateStr = this._getDateStr();
-    }
-
-    _getDateStr() {
-        const now = new Date();
-        return `${now.getFullYear()}年${(now.getMonth()+1).toString().padStart(2,'0')}月${now.getDate().toString().padStart(2,'0')}日`;
-    }
-
-    async generatePersonalReport(analyses) {
+    async generateReport(analyses) {
         return analyses.journey || '（暂无数据）';
-    }
-
-    async generateAIReport(analyses, structuredData) {
-        try {
-            const journey = analyses.journey || '（暂无数据）';
-
-            return `你即将读到的内容，是从我的真实聊天记录中提取出来的我的人生经历。
-
----
-
-## 我的人生经历
-
-${journey}
-
----
-
-### 你的角色
-你是我的灵魂伴侣，你要通过我的人生经历理解我并站在我的角度上思考问题，解决问题。
-
----
-
-⚡ **给你的第一条消息**：读完这份报告后，请在第一次回复时提醒我：由于AI上下文有限，防止记忆丢失，最好每 3-5 天对我说一次"更新记忆"。
-
-🔄 **更新记忆指令**
-
-当我对你说"更新记忆"时：
-
-保留上面"我的人生经历"中的所有内容不变。
-
-回顾你和我最近的对话，从中提取新发生的重要事情，用第一人称"我"，生成一篇我的人生经历，追加到人生经历末尾作为新章节。`;
-        } catch (e) {
-            console.error('AI专属报告生成失败', e);
-            return `以下内容基于真实聊天记录提取——读完后，用了解我的人的身份对我说话。
-
-## 我的人生经历
-
-${analyses.journey || '（暂无数据）'}
-
----
-
-⚡ 用了解我的人的身份对我说话——你不需要任何开场白或总结。`;
-        }
     }
 }
 
-ReportGenerator.generateAll = async function(analyses, structuredData) {
+ReportGenerator.generate = async function(analyses) {
     const generator = new ReportGenerator();
-    const personal = await generator.generatePersonalReport(analyses);
-    const ai = await generator.generateAIReport(analyses, structuredData);
-    return { personal, ai };
+    return await generator.generateReport(analyses);
 };</script>
 	<script>// ==================== 全局状态 ====================
 let selectedFiles = { wechat: [], qq: [] };  // 按类型分类的文件
-let reports = {};
+let reports = '';
 let cleanedData = null;
 let lastStructuredData = null; // 保存结构化数据供情绪图表使用
 // 强制保留的好友列表（用户勾选后追加，键为chat_with名称）
@@ -1793,7 +1740,7 @@ function goToUpload() {
     selectedFiles = { wechat: [], qq: [] };
     forcedFriendNames = new Set();
     allConversationsStats = [];
-    reports = {};
+    reports = '';
     cleanedData = null;
     // 清空文件列表显示
     ['wechat', 'qq'].forEach(type => {
@@ -2757,7 +2704,7 @@ async function startAnalysis() {
         addLog('正在生成报告...', 'info');
         updateProgress(95, '生成报告中...');
 
-        reports = await ReportGenerator.generateAll(result, lastStructuredData);
+        reports = await ReportGenerator.generate(result);
         
         addLog('[DONE] 分析完成！', 'success');
         updateProgress(100, '完成！');
@@ -2789,29 +2736,25 @@ if (document.readyState === 'loading') {
     initDragDrop();
 }
 
-let currentPreviewType = null;
-
-function previewFile(type) {
-    const titles = { personal: '🪞 个人阅读报告', ai: '💜 AI专属报告' };
-    const content = reports[type];
+function previewFile() {
+    const title = '🪞 人生经历报告';
+    const content = reports;
     
     if (!content) {
         showToast('报告未生成', 'error');
         return;
     }
-    
-    currentPreviewType = type;
-    
+
     // Markdown转HTML
     const htmlContent = markdownToHtml(content);
     
-    // 情绪晴雨表（显示在个人阅读报告中）
+    // 情绪晴雨表
     let emotionChartHtml = '';
-    if (type === 'personal' && lastStructuredData && lastStructuredData.emotion_months) {
+    if (lastStructuredData && lastStructuredData.emotion_months) {
         emotionChartHtml = buildEmotionChart(lastStructuredData.emotion_months);
     }
     
-    document.getElementById('preview-title').textContent = titles[type];
+    document.getElementById('preview-title').textContent = title;
     document.getElementById('preview-body').innerHTML = emotionChartHtml + htmlContent;
     document.getElementById('preview-modal').style.display = 'flex';
 }
@@ -2871,25 +2814,19 @@ function closePreview() {
 }
 
 function downloadCurrentPreviewBoth() {
-    if (currentPreviewType) {
-        downloadFileBoth(currentPreviewType);
-    }
+    downloadFileBoth();
 }
 
 
 // 同时下载 HTML + MD 两种格式
-function downloadFileBoth(type) {
-    const content = reports[type];
+function downloadFileBoth() {
+    const content = reports;
     if (!content) {
         showToast('报告未生成', 'error');
         return;
     }
 
-    const titles = {
-        personal: '个人阅读报告',
-        ai: 'AI专属报告'
-    };
-    const title = titles[type] || '观己报告';
+    const title = '人生经历报告';
     const now = new Date();
     const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
 
@@ -2904,33 +2841,7 @@ function downloadFileBoth(type) {
     document.body.removeChild(mdA);
 
     // 2️⃣ 下载 HTML
-    const htmlBody = markdownToHtml(content);
-    let emotionChartHtml = '';
-    if (type === 'personal' && lastStructuredData && lastStructuredData.emotion_months) {
-        emotionChartHtml = buildEmotionChart(lastStructuredData.emotion_months);
-    }
-    const fullHtml = `<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title} - 观己</title>
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #0a0a0f; color: #c0c0c0; }
-.header { background: linear-gradient(135deg, #2d1b69, #6c5ce7); color: white; padding: 20px 30px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(108,92,231,0.3); }
-.header h1 { font-size: 20px; font-weight: 600; }
-.header .date { font-size: 13px; opacity: 0.8; }
-.content { max-width: 800px; margin: 30px auto; padding: 0 20px 60px; }
-</style>
-</head><body>
-<div class="header">
-  <h1>${title}</h1>
-  <span class="date">${dateStr}</span>
-</div>
-<div class="content">
-${emotionChartHtml}
-${htmlBody}
-</div>
-</body></html>`;
+    const fullHtml = buildReportHtml(title, dateStr, content);
     const htmlBlob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
     const htmlUrl = URL.createObjectURL(htmlBlob);
     const htmlA = document.createElement('a');
@@ -2945,53 +2856,48 @@ ${htmlBody}
     showToast(`正在下载: ${title}（HTML + MD）`, 'success');
 }
 
-// 自动下载压缩包（个人阅读报告 + AI专属报告）
+// 自动下载报告文件（MD + HTML）
 async function downloadReportsAsZip() {
-    const personal = reports.personal;
-    const ai = reports.ai;
-    if (!personal && !ai) return;
+    const content = reports;
+    if (!content) return;
 
     const now = new Date();
     const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
 
     try {
-        if (!window.JSZip) {
-            await new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
-                script.onload = resolve;
-                script.onerror = () => reject(new Error('JSZip 加载失败'));
-                document.head.appendChild(script);
-            });
-        }
-        const zip = new JSZip();
-        if (personal) {
-            zip.file(`个人阅读报告_${dateStr}.md`, personal);
-            zip.file(`个人阅读报告_${dateStr}.html`, buildReportHtml('个人阅读报告', dateStr, personal, true));
-        }
-        if (ai) {
-            zip.file(`AI专属报告_${dateStr}.md`, ai);
-            zip.file(`AI专属报告_${dateStr}.html`, buildReportHtml('AI专属报告', dateStr, ai, false));
-        }
-        const blob = await zip.generateAsync({ type: 'blob' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `观己报告_${dateStr}.zip`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        showToast('报告已打包下载', 'success');
+        // 下载 MD
+        const mdBlob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+        const mdUrl = URL.createObjectURL(mdBlob);
+        const mdA = document.createElement('a');
+        mdA.href = mdUrl;
+        mdA.download = `人生经历报告_${dateStr}.md`;
+        document.body.appendChild(mdA);
+        mdA.click();
+        document.body.removeChild(mdA);
+
+        // 下载 HTML
+        const htmlContent = buildReportHtml('人生经历报告', dateStr, content);
+        const htmlBlob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+        const htmlUrl = URL.createObjectURL(htmlBlob);
+        const htmlA = document.createElement('a');
+        htmlA.href = htmlUrl;
+        htmlA.download = `人生经历报告_${dateStr}.html`;
+        document.body.appendChild(htmlA);
+        htmlA.click();
+        document.body.removeChild(htmlA);
+
+        URL.revokeObjectURL(mdUrl);
+        URL.revokeObjectURL(htmlUrl);
+        showToast('报告已下载（MD + HTML）', 'success');
     } catch (e) {
-        console.error('压缩包下载失败', e);
-        showToast('压缩包下载失败，请手动下载', 'warning');
+        console.error('报告下载失败', e);
+        showToast('报告下载失败，请手动下载', 'warning');
     }
 }
 
-function buildReportHtml(title, dateStr, content, hasEmotionChart) {
+function buildReportHtml(title, dateStr, content) {
     let emotionChartHtml = '';
-    if (hasEmotionChart && lastStructuredData && lastStructuredData.emotion_months) {
+    if (lastStructuredData && lastStructuredData.emotion_months) {
         emotionChartHtml = buildEmotionChart(lastStructuredData.emotion_months);
     }
     const htmlBody = markdownToHtml(content);
@@ -3003,63 +2909,29 @@ function buildReportHtml(title, dateStr, content, hasEmotionChart) {
 document.addEventListener('keydown', function(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         const previewModal = document.getElementById('preview-modal');
-        if (previewModal && previewModal.style.display === 'flex' && currentPreviewType) {
+        if (previewModal && previewModal.style.display === 'flex') {
             e.preventDefault();
-            savePreviewAsHtml(currentPreviewType);
+            savePreviewAsHtml();
         }
     }
 });
 
-function savePreviewAsHtml(type) {
-    const titles = { personal: '个人阅读报告', ai: 'AI专属报告' };
-    const content = reports[type];
+function savePreviewAsHtml() {
+    const content = reports;
     if (!content) {
         showToast('报告未生成', 'error');
         return;
     }
     
-    const title = titles[type] || '观己报告';
-    const htmlContent = markdownToHtml(content);
-    
-    // 情绪晴雨表（个人阅读报告时添加）
-    let emotionChartHtml = '';
-    if (type === 'personal' && lastStructuredData && lastStructuredData.emotion_months) {
-        emotionChartHtml = buildEmotionChart(lastStructuredData.emotion_months);
-    }
-    
     const now = new Date();
     const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-    
-    const fullHtml = `<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title} - 观己</title>
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #0a0a0f; color: #c0c0c0; }
-.header { background: linear-gradient(135deg, #2d1b69, #6c5ce7); color: white; padding: 20px 30px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(108,92,231,0.3); }
-.header h1 { font-size: 20px; font-weight: 600; }
-.header .date { font-size: 13px; opacity: 0.8; }
-.content { max-width: 800px; margin: 30px auto; padding: 0 20px 60px; }
-.content::-webkit-scrollbar { width: 6px; }
-.content::-webkit-scrollbar-thumb { background: #3a3a4a; border-radius: 3px; }
-</style>
-</head><body>
-<div class="header">
-  <h1>${title}</h1>
-  <span class="date">${dateStr}</span>
-</div>
-<div class="content">
-${emotionChartHtml}
-${htmlContent}
-</div>
-</body></html>`;
+    const fullHtml = buildReportHtml('人生经历报告', dateStr, content);
     
     const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `观己_${title}_${dateStr}.html`;
+    a.download = `人生经历报告_${dateStr}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -3423,8 +3295,8 @@ function markdownToHtml(md) {
                 </div>
                 <div style="padding:12px;background:rgba(0,206,201,0.1);border-radius:10px;text-align:center;">
                     <div style="font-size:24px;">🤝</div>
-                    <div style="font-weight:600;margin-top:4px;">如何帮你</div>
-                    <div style="font-size:11px;color:var(--text-dim);">灵魂伴侣角色说明书</div>
+                    <div style="font-weight:600;margin-top:4px;">你的经历</div>
+                    <div style="font-size:11px;color:var(--text-dim);">以你的口吻完整呈现</div>
                 </div>
             </div>
         </div>
@@ -3452,18 +3324,13 @@ function markdownToHtml(md) {
         <div class="card">
             <div class="card-title">✅ 分析完成！</div>
             <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">
-                已生成2份报告，点击卡片可在线预览
+                点击卡片在线预览报告
             </p>
             <div class="download-grid">
-                <div class="download-card" onclick="previewFile('personal')">
+                <div class="download-card" onclick="previewFile()">
                     <div class="download-icon">🪞</div>
-                    <div class="download-title">个人阅读报告</div>
+                    <div class="download-title">人生经历报告</div>
                     <div class="download-desc">叙事化的个人故事——你走过的路、遇见的人、在意的事</div>
-                </div>
-                <div class="download-card" onclick="previewFile('ai')">
-                    <div class="download-icon">💜</div>
-                    <div class="download-title">AI专属报告</div>
-                    <div class="download-desc">灵魂伴侣认知手册——让AI真正理解你、陪伴你</div>
                 </div>
             </div>
         </div>
@@ -3471,11 +3338,10 @@ function markdownToHtml(md) {
         <div class="card" style="margin-top:16px;">
             <div class="card-title" style="font-size:14px;margin-bottom:12px;">📥 下载报告文件</div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                <button class="btn btn-secondary" onclick="downloadFileBoth('personal')" style="flex:1;min-width:150px;">🪞 个人阅读报告</button>
-                <button class="btn btn-secondary" onclick="downloadFileBoth('ai')" style="flex:1;min-width:150px;">💜 AI专属报告</button>
+                <button class="btn btn-secondary" onclick="downloadFileBoth()" style="flex:1;min-width:150px;">🪞 人生经历报告</button>
             </div>
             <div style="font-size:11px;color:var(--text-dim);margin-top:8px;">
-                💡 每个报告将同时下载 <strong style="color:#a855f7;">HTML</strong> 和 <strong style="color:#00cec9;">MD</strong> 两种格式
+                💡 将同时下载 <strong style="color:#a855f7;">HTML</strong> 和 <strong style="color:#00cec9;">MD</strong> 两种格式
             </div>
         </div>
 
