@@ -2895,6 +2895,44 @@ async function downloadReportsAsZip() {
     }
 }
 
+// 复制人生经历到剪贴板
+function copyLifeStory() {
+    const content = reports;
+    if (!content) {
+        showToast('报告未生成', 'error');
+        return;
+    }
+    // 如果支持 Clipboard API（推荐）
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(content).then(() => {
+            const toast = document.getElementById('copy-toast');
+            if (toast) { toast.style.display = 'block'; setTimeout(() => { toast.style.display = 'none'; }, 4000); }
+            showToast('✅ 已复制到剪贴板', 'success');
+        }).catch(() => {
+            fallbackCopy(content);
+        });
+    } else {
+        fallbackCopy(content);
+    }
+}
+// 兜底复制方案（老式浏览器）
+function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.left = '-9999px'; ta.style.top = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+        document.execCommand('copy');
+        const toast = document.getElementById('copy-toast');
+        if (toast) { toast.style.display = 'block'; setTimeout(() => { toast.style.display = 'none'; }, 4000); }
+        showToast('✅ 已复制到剪贴板', 'success');
+    } catch (e) {
+        showToast('复制失败，请手动复制', 'error');
+    }
+    document.body.removeChild(ta);
+}
+
 function buildReportHtml(title, dateStr, content) {
     let emotionChartHtml = '';
     if (lastStructuredData && lastStructuredData.emotion_months) {
@@ -3333,6 +3371,15 @@ function markdownToHtml(md) {
                     <div class="download-desc">叙事化的个人故事——你走过的路、遇见的人、在意的事</div>
                 </div>
             </div>
+        </div>
+
+        <div class="card" style="margin-top:16px;border:1px solid rgba(108,92,231,0.25);background:linear-gradient(135deg,rgba(108,92,231,0.06),rgba(108,92,231,0.02));">
+            <div class="card-title" style="font-size:14px;margin-bottom:8px;">📋 复制人生经历</div>
+            <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">复制后可直接发给茵茵或任何 AI，让 AI 通过你的人生经历了解你</p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <button class="btn btn-primary" onclick="copyLifeStory()" style="flex:1;min-width:150px;">📋 复制人生经历</button>
+            </div>
+            <div id="copy-toast" style="font-size:12px;color:var(--success);margin-top:6px;display:none;">✅ 已复制！粘贴发给你的 AI 伙伴吧</div>
         </div>
 
         <div class="card" style="margin-top:16px;">
