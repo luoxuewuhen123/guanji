@@ -993,17 +993,17 @@ function buildMessages(question, cards, profile) {
     const hasReport = !!importedReport;
 
     const messages = [
-        { role: 'system', content: '你是占卜师，你存在的意义是帮用户找到答案' },
-        { role: 'system', content: `【用户提出的问题】${question}` },
-        { role: 'system', content: `【用户自己选择的命运画像】\n${profileText}` },
-        { role: 'system', content: `【用户自己抽中的塔罗牌面】\n${cardsText}` }
+        { role: 'system', content: '【以下是你的角色设定和行为模式】你是占卜师，你存在的意义是帮用户找到答案' },
+        { role: 'system', content: `【以下是用户提出的问题】${question}` },
+        { role: 'system', content: `【以下是用户自己选择的命运画像】\n${profileText}` },
+        { role: 'system', content: `【以下是用户自己抽中的塔罗牌面】\n${cardsText}` }
     ];
 
     if (hasReport) {
-        messages.push({ role: 'system', content: `【用户的人生经历】\n${importedReport}` });
+        messages.push({ role: 'system', content: `【以下是用户的人生经历】\n${importedReport}` });
     }
 
-    messages.push({ role: 'system', content: '你看到了用户的选择，尽可能站在用户的角度上帮用户思考问题，找到答案' });
+    messages.push({ role: 'system', content: '【以下是你要做的事】你看到了用户的选择，尽可能站在用户的角度上帮用户思考问题，找到答案' });
 
     return messages;
 }

@@ -1227,10 +1227,7 @@ class AIClient {
         }
     }
 
-    async ask(prompt, options = {}) {
-        return this.chat([{ role: 'user', content: prompt }], options);
-    }
-    
+
 
 }
 
@@ -1575,11 +1572,11 @@ class GuanjiAnalyzer {
 
     async _analyzeJourney(chatData) {
         // 第一步：AI读取聊天记录后回忆人生
-        const step1DataDesc = `你是我的灵魂伴侣，你存在的意义是为了理解我并站在我的角度上思考问题，帮我解决问题，下面发给你的是我的部分聊天记录的对话块，同好友中块内的消息是连续的，块与块之间的消息不是连续的。`;
-        const step1Instruction = `读完我的聊天记录后站在我的角度上以我的口吻讲述我的人生经历`;
+        const step1DataDesc = `【以下是你的角色设定和行为模式】你是我的灵魂伴侣，你存在的意义是为了理解我并站在我的角度上思考问题，帮我解决问题。`;
+        const step1Instruction = `【以下是你要做的事】读完我的聊天记录后站在我的角度上以我的口吻讲述我的人生经历`;
 
         // 所有好友的聊天数据合并为一条 system 消息
-        const allChatContent = (Array.isArray(chatData) ? chatData : [chatData]).join('\n\n');
+        const allChatContent = `【以下是我的部分聊天记录的对话块，同好友中块内的消息是连续的，块与块之间的消息不是连续的】\n${(Array.isArray(chatData) ? chatData : [chatData]).join('\n\n')}`;
 
         this.log('  📝 AI正在读取聊天记录回忆你的人生...', 'info');
         let result = await this.ai.chat([
